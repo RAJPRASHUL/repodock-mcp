@@ -1,12 +1,4 @@
-from fastmcp import FastMCP
-
-mcp = FastMCP("DevOps Assistant")
-
-
-@mcp.tool
-def health_check(name: str = "developer") -> str:
-    """Verify that the DevOps MCP server is running."""
-    return f"Hello, {name}! Your MCP server is working."
+from devops_assistant.app import mcp
 
 
 if __name__ == "__main__":
