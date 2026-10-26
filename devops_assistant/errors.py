@@ -11,3 +11,11 @@ class GitHubApiError(ToolError):
 
 class DockerError(ToolError):
     """Raised when a Docker operation fails."""
+
+
+class PolicyDeniedError(ToolError):
+    """Raised when a request is blocked by server-side policy."""
+
+
+class InvalidInputError(ToolError):
+    """Raised when a tool argument is invalid."""

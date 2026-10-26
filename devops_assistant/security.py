@@ -11,9 +11,14 @@ def redact(text: str) -> str:
 
 
 def limit(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
     if len(text) <= max_chars:
         return text
-    return text[:max_chars] + f"\n...[truncated {len(text) - max_chars} chars]"
+    suffix = "\n...[truncated]"
+    if max_chars <= len(suffix):
+        return suffix[:max_chars]
+    return text[: max_chars - len(suffix)] + suffix
 
 
 def require_allowed(value: str, allowed: set[str], kind: str) -> None:

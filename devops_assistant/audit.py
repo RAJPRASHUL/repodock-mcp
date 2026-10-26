@@ -2,8 +2,12 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from typing import Any
+
+from .errors import InvalidInputError, PolicyDeniedError
+from .security import redact
 
 log = logging.getLogger(__name__)
 
@@ -31,24 +35,35 @@ def audit_tool_call(tool_name: str, arguments: dict[str, Any], decision: str, st
 
 
 def audit_tool(func: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         tool_name = getattr(func, "__name__", func.__class__.__name__)
         started = time.perf_counter()
         decision = "allowed"
+        status = "error"
+        error: str | None = None
         try:
             result = func(*args, **kwargs)
             status = "success"
-            error = None
             return result
-        except Exception as exc:  # pragma: no cover - fallback
+        except Exception as exc:
             status = "error"
-            error = str(exc)
+            if isinstance(exc, (InvalidInputError, PolicyDeniedError, PermissionError)):
+                decision = "denied"
+            error = redact(str(exc))
             raise
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             try:
-                audit_tool_call(tool_name, {**kwargs}, decision, status, error, latency_ms)
+                audit_tool_call(tool_name, redact_arguments(kwargs), decision, status, error, latency_ms)
             except Exception:
                 log.exception("Failed to write audit log for %s", tool_name)
 
     return wrapper
+
+
+def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: redact(value) if isinstance(value, str) else value
+        for key, value in arguments.items()
+    }
