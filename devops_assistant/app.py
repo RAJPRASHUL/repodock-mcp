@@ -7,9 +7,12 @@ from fastmcp.exceptions import ToolError
 
 from .audit import audit_tool
 from .config import load_settings
+from .services.github_client import GitHubClient
+from .tools.github_read import register as register_github_tools
 
 log = logging.getLogger(__name__)
 mcp = FastMCP("DevOps Assistant")
+register_github_tools(mcp, GitHubClient(load_settings()))
 
 
 @mcp.tool
