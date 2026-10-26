@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -40,8 +40,11 @@ class Settings:
             raise ValueError("MAX_LOG_LINES must be greater than zero")
         if settings.max_output_chars <= 0:
             raise ValueError("MAX_OUTPUT_CHARS must be greater than zero")
-        if not settings.github_api_base_url:
-            raise ValueError("GITHUB_API_BASE_URL cannot be empty")
+        parsed_api_url = urlparse(settings.github_api_base_url)
+        if parsed_api_url.scheme not in {"http", "https"} or not parsed_api_url.netloc:
+            raise ValueError("GITHUB_API_BASE_URL must be an absolute HTTP or HTTPS URL")
+        if parsed_api_url.username or parsed_api_url.password:
+            raise ValueError("GITHUB_API_BASE_URL must not contain credentials")
 
         return settings
 
