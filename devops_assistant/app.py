@@ -7,12 +7,16 @@ from fastmcp.exceptions import ToolError
 
 from .audit import audit_tool
 from .config import load_settings
+from .services.docker_client import DockerClient
 from .services.github_client import GitHubClient
+from .tools.docker_read import register as register_docker_tools
 from .tools.github_read import register as register_github_tools
 
 log = logging.getLogger(__name__)
 mcp = FastMCP("DevOps Assistant")
-register_github_tools(mcp, GitHubClient(load_settings()))
+settings = load_settings()
+register_github_tools(mcp, GitHubClient(settings))
+register_docker_tools(mcp, DockerClient(settings))
 
 
 @mcp.tool
