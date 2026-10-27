@@ -9,6 +9,8 @@ from .audit import audit_tool
 from .config import load_settings
 from .services.docker_client import DockerClient
 from .services.github_client import GitHubClient
+from .prompts import register as register_prompts
+from .resources import register as register_resources
 from .tools.docker_read import register as register_docker_tools
 from .tools.github_read import register as register_github_tools
 
@@ -17,6 +19,8 @@ mcp = FastMCP("DevOps Assistant")
 settings = load_settings()
 register_github_tools(mcp, GitHubClient(settings))
 register_docker_tools(mcp, DockerClient(settings))
+register_resources(mcp, settings)
+register_prompts(mcp)
 
 
 @mcp.tool
