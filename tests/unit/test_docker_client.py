@@ -37,6 +37,7 @@ def make_container(name: str = "api", logs: bytes = b"ready\n") -> SimpleNamespa
         image=image,
         logs=Mock(return_value=logs),
         reload=Mock(),
+        restart=Mock(),
     )
     return container
 
@@ -128,3 +129,54 @@ def test_docker_daemon_failure_is_returned_as_safe_tool_error(monkeypatch) -> No
 
     with pytest.raises(ToolError, match="Docker is unavailable"):
         client.list_images(10)
+
+
+def test_restart_requires_explicit_allowlist() -> None:
+    client, sdk_client = make_client()
+
+    with pytest.raises(PolicyDeniedError, match="explicit container allowlist"):
+        client.prepare_container_restart("api")
+
+    sdk_client.containers.get.assert_not_called()
+
+
+def test_restart_rejects_production_container_by_name() -> None:
+    client, sdk_client = make_client({"api-prod"})
+    sdk_client.containers.get.return_value = make_container("api-prod")
+
+    with pytest.raises(PolicyDeniedError, match="production containers"):
+        client.prepare_container_restart("api-prod")
+
+    sdk_client.containers.get.return_value.restart.assert_not_called()
+
+
+def test_restart_requires_confirmation_before_state_change() -> None:
+    client, sdk_client = make_client({"api"})
+    container = make_container()
+    sdk_client.containers.get.return_value = container
+
+    details = client.prepare_container_restart("api")
+
+    assert details["name"] == "api"
+    container.restart.assert_not_called()
+
+
+def test_restart_executes_only_after_confirmed_operation() -> None:
+    client, sdk_client = make_client({"api"})
+    container = make_container()
+    sdk_client.containers.get.return_value = container
+
+    result = client.restart_container("api")
+
+    container.restart.assert_called_once_with(timeout=10)
+    assert result == {"name": "api", "status": "restart_requested"}
+
+
+def test_restart_rejects_production_environment_label() -> None:
+    client, sdk_client = make_client({"api"})
+    container = make_container()
+    container.attrs["Config"]["Labels"] = {"environment": "production"}
+    sdk_client.containers.get.return_value = container
+
+    with pytest.raises(PolicyDeniedError, match="production containers"):
+        client.prepare_container_restart("api")

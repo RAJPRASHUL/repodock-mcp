@@ -1,4 +1,5 @@
 from typing import Any
+import re
 
 import docker
 from docker.errors import APIError, DockerException, NotFound
@@ -143,6 +144,25 @@ class DockerClient:
             }
         )
 
+    def prepare_container_restart(self, name: str) -> dict[str, Any]:
+        container = self._get_write_container(name)
+        attrs = getattr(container, "attrs", {})
+        self._deny_production_container(name, attrs)
+        state = attrs.get("State") or {}
+        return {
+            "name": self._container_name(container),
+            "status": state.get("Status", getattr(container, "status", None)),
+        }
+
+    def restart_container(self, name: str) -> dict[str, Any]:
+        container = self._get_write_container(name)
+        self._deny_production_container(name, getattr(container, "attrs", {}))
+        try:
+            container.restart(timeout=10)
+        except DockerException as exc:
+            raise self._map_docker_error(exc) from exc
+        return {"name": self._container_name(container), "status": "restart_requested"}
+
     def _get_container(self, name: str) -> Any:
         self._require_allowed(name)
         try:
@@ -151,6 +171,31 @@ class DockerClient:
             raise ToolError(f"Container '{name}' was not found") from exc
         except DockerException as exc:
             raise self._map_docker_error(exc) from exc
+
+    def _get_write_container(self, name: str) -> Any:
+        allowed = {item.casefold() for item in self.settings.allowed_docker_containers}
+        if not allowed:
+            raise PolicyDeniedError("Docker writes require an explicit container allowlist")
+        if not name or name.casefold() not in allowed:
+            raise PolicyDeniedError("Container is not on the configured allowlist")
+        container = self._get_container(name)
+        try:
+            container.reload()
+        except DockerException as exc:
+            raise self._map_docker_error(exc) from exc
+        return container
+
+    @staticmethod
+    def _deny_production_container(name: str, attrs: dict[str, Any]) -> None:
+        production_marker = re.compile(r"(^|[-_.])(prod|production)([-_.]|$)", re.IGNORECASE)
+        labels = (attrs.get("Config") or {}).get("Labels") or {}
+        environment = " ".join(
+            str(value)
+            for key, value in labels.items()
+            if re.search(r"(?:^|[._-])(environment|env|stage|tier)(?:$|[._-])", key, re.IGNORECASE)
+        )
+        if production_marker.search(name) or production_marker.search(environment):
+            raise PolicyDeniedError("Docker write operations are blocked for production containers")
 
     def _require_allowed(self, name: str) -> None:
         if not name or not name.strip():

@@ -21,6 +21,12 @@ class GitHubClient:
         self.settings = settings
         self.base_url = settings.github_api_base_url.rstrip("/")
 
+    def require_write_token(self) -> None:
+        if not self.settings.github_write_token:
+            raise ToolError("GITHUB_WRITE_TOKEN is required for GitHub write operations")
+        if self.settings.github_write_token == self.settings.github_token:
+            raise ToolError("GitHub writes require a separate GITHUB_WRITE_TOKEN")
+
     def validate_repository(self, repository: str) -> str:
         if not _REPOSITORY_PATTERN.fullmatch(repository):
             raise InvalidInputError("Repository must use the owner/repository format")
@@ -171,6 +177,175 @@ class GitHubClient:
             raise ToolError("The requested file is not valid UTF-8 text") from exc
         return limit(redact(content), self.settings.max_output_chars)
 
+    def get_branch_sha(self, repository: str, branch: str) -> str:
+        repository = self.validate_repository(repository)
+        self._validate_branch_name(branch)
+        data = self._request(f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}")
+        sha = (data.get("object") or {}).get("sha") if isinstance(data, dict) else None
+        if not isinstance(sha, str) or not sha:
+            raise ToolError("GitHub API returned an invalid branch reference")
+        return sha
+
+    def get_default_branch(self, repository: str) -> str:
+        repository = self.validate_repository(repository)
+        data = self._request(f"repos/{repository}")
+        default_branch = data.get("default_branch") if isinstance(data, dict) else None
+        if not isinstance(default_branch, str) or not default_branch:
+            raise ToolError("GitHub API returned invalid repository metadata")
+        return default_branch
+
+    def validate_write_branch(self, repository: str, branch: str, require_existing: bool = True) -> str:
+        repository = self.validate_write_repository(repository)
+        self._validate_branch_name(branch)
+        prefix = self.settings.github_write_branch_prefix
+        if not branch.startswith(prefix):
+            raise PolicyDeniedError(f"Write branches must start with '{prefix}'")
+        if branch.casefold() == self.get_default_branch(repository).casefold():
+            raise PolicyDeniedError("Writing to the repository default branch is denied")
+        if require_existing:
+            self.get_branch_sha(repository, branch)
+        return branch
+
+    def prepare_branch_creation(self, repository: str, branch: str, base_branch: str) -> dict[str, str]:
+        repository = self.validate_write_repository(repository)
+        self._validate_branch_name(branch)
+        if not branch.startswith(self.settings.github_write_branch_prefix):
+            raise PolicyDeniedError(
+                f"New branches must start with '{self.settings.github_write_branch_prefix}'"
+            )
+        self._validate_branch_name(base_branch)
+        base_sha = self.get_branch_sha(repository, base_branch)
+        return {"repository": repository, "branch": branch, "base_branch": base_branch, "base_sha": base_sha}
+
+    def create_branch(self, repository: str, branch: str, base_sha: str) -> dict[str, Any]:
+        repository = self.validate_write_repository(repository)
+        self._validate_branch_name(branch)
+        if not branch.startswith(self.settings.github_write_branch_prefix):
+            raise PolicyDeniedError(
+                f"New branches must start with '{self.settings.github_write_branch_prefix}'"
+            )
+        data = self._write_request(
+            "POST",
+            f"repos/{repository}/git/refs",
+            {"ref": f"refs/heads/{branch}", "sha": base_sha},
+        )
+        return self._shape(
+            {
+                "ref": data.get("ref") if isinstance(data, dict) else None,
+                "sha": ((data.get("object") or {}).get("sha") if isinstance(data, dict) else None),
+            }
+        )
+
+    def prepare_file_update(
+        self,
+        repository: str,
+        path: str,
+        branch: str,
+        content: str,
+        message: str,
+    ) -> dict[str, Any]:
+        repository = self.validate_write_repository(repository)
+        path = self._validate_writable_file_path(path)
+        self._validate_blocked_path(path)
+        if self._is_sensitive_path(path):
+            raise PolicyDeniedError("Writes to sensitive credential files are blocked by policy")
+        if not message.strip() or len(message) > 200:
+            raise InvalidInputError("Commit message must contain 1 to 200 characters")
+        if redact(content) != content:
+            raise PolicyDeniedError("File content appears to contain a secret and cannot be staged")
+        if len(content) > max(1, self.settings.max_output_chars // 2):
+            raise InvalidInputError("File content is too large to show in the confirmation response")
+        self.validate_write_branch(repository, branch)
+
+        encoded_path = quote(path, safe="/")
+        sha: str | None = None
+        try:
+            data = self._request(
+                f"repos/{repository}/contents/{encoded_path}",
+                {"ref": branch},
+            )
+            sha = data.get("sha") if isinstance(data, dict) else None
+            if sha is not None and not isinstance(sha, str):
+                raise ToolError("GitHub API returned an invalid file reference")
+        except ToolError as exc:
+            if "not found or is not accessible" not in str(exc):
+                raise
+
+        return {"repository": repository, "path": path, "branch": branch, "sha": sha}
+
+    def commit_file(
+        self,
+        repository: str,
+        path: str,
+        branch: str,
+        content: str,
+        message: str,
+        sha: str | None,
+    ) -> dict[str, Any]:
+        repository = self.validate_write_repository(repository)
+        path = self._validate_writable_file_path(path)
+        self._validate_blocked_path(path)
+        if self._is_sensitive_path(path):
+            raise PolicyDeniedError("Writes to sensitive credential files are blocked by policy")
+        if redact(content) != content or redact(message) != message:
+            raise PolicyDeniedError("File content or commit message appears to contain a secret")
+        if not message.strip() or len(message) > 200:
+            raise InvalidInputError("Commit message must contain 1 to 200 characters")
+        if len(content) > max(1, self.settings.max_output_chars // 2):
+            raise InvalidInputError("File content is too large to show in the confirmation response")
+        self.validate_write_branch(repository, branch)
+        payload: dict[str, Any] = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        data = self._write_request(
+            "PUT",
+            f"repos/{repository}/contents/{quote(path, safe='/')}",
+            payload,
+        )
+        commit = data.get("commit") if isinstance(data, dict) else {}
+        return self._shape(
+            {
+                "commit_sha": (commit or {}).get("sha"),
+                "html_url": (commit or {}).get("html_url"),
+                "content_path": ((data.get("content") or {}).get("path") if isinstance(data, dict) else None),
+                "branch": branch,
+            }
+        )
+
+    def create_pull_request(
+        self,
+        repository: str,
+        head: str,
+        base: str,
+        title: str,
+        body: str,
+    ) -> dict[str, Any]:
+        repository = self.validate_write_repository(repository)
+        if not title.strip() or len(title) > 256:
+            raise InvalidInputError("Pull request title must contain 1 to 256 characters")
+        if len(body) > self.settings.max_output_chars // 2:
+            raise InvalidInputError("Pull request body is too large to show in the confirmation response")
+        if redact(title) != title or redact(body) != body:
+            raise PolicyDeniedError("Pull request details appear to contain a secret")
+        self.validate_write_branch(repository, head)
+        self.get_branch_sha(repository, base)
+        data = self._write_request(
+            "POST",
+            f"repos/{repository}/pulls",
+            {"title": title, "head": head, "base": base, "body": body},
+        )
+        return self._shape(
+            {
+                "number": data.get("number") if isinstance(data, dict) else None,
+                "html_url": data.get("html_url") if isinstance(data, dict) else None,
+                "state": data.get("state") if isinstance(data, dict) else None,
+            }
+        )
+
     def list_commits(self, repository: str, branch: str | None, limit_count: int) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
         params: dict[str, Any] = {}
@@ -239,6 +414,97 @@ class GitHubClient:
         normalized = path.strip("/")
         if not normalized and not allow_empty:
             raise InvalidInputError("A file path is required")
-        if "\x00" in path or any(part in {".", ".."} for part in normalized.split("/")):
+        if (
+            "\x00" in path
+            or "\\" in path
+            or any(part in {".", ".."} for part in normalized.split("/"))
+        ):
             raise InvalidInputError("Invalid GitHub path")
         return normalized
+
+    @staticmethod
+    def _validate_branch_name(branch: str) -> None:
+        if (
+            not branch
+            or len(branch) > 240
+            or branch.startswith("/")
+            or branch.endswith("/")
+            or branch.startswith(".")
+            or branch.endswith(".")
+            or ".." in branch
+            or "@{" in branch
+            or "//" in branch
+            or any(char.isspace() or char in "~^:?*[\\" for char in branch)
+            or any(part.endswith(".lock") for part in branch.split("/"))
+        ):
+            raise InvalidInputError("Invalid Git branch name")
+
+    @classmethod
+    def _validate_writable_file_path(cls, path: str) -> str:
+        if path.startswith("/") or path.endswith("/") or "//" in path:
+            raise InvalidInputError("Write path must be a normalized repository-relative file path")
+        return cls._validate_path(path, allow_empty=False)
+
+    def _validate_blocked_path(self, path: str) -> None:
+        normalized = path.casefold()
+        blocked = {".github/workflows"} | {
+            item.casefold().strip("/") for item in self.settings.blocked_github_paths
+        }
+        if any(normalized == item or normalized.startswith(f"{item}/") for item in blocked):
+            raise PolicyDeniedError("Writes to this GitHub path are blocked by policy")
+
+    @staticmethod
+    def _is_sensitive_path(path: str) -> bool:
+        name = path.rsplit("/", 1)[-1].casefold()
+        return (
+            name == ".env"
+            or name.startswith(".env.")
+            or name.endswith((".pem", ".key", ".p12", ".pfx"))
+            or name in {"id_rsa", "id_ed25519"}
+        )
+
+    def validate_write_repository(self, repository: str) -> str:
+        repository = self.validate_repository(repository)
+        if not self.settings.allowed_github_repos:
+            raise PolicyDeniedError("GitHub writes require an explicit repository allowlist")
+        return repository
+
+    def _write_request(self, method: str, path: str, payload: dict[str, Any]) -> Any:
+        self.require_write_token()
+        token = self.settings.github_write_token
+        try:
+            response = httpx.request(
+                method,
+                f"{self.base_url}/{path.lstrip('/')}",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {token}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json=payload,
+                timeout=10.0,
+                follow_redirects=False,
+            )
+        except httpx.TimeoutException as exc:
+            raise ToolError("GitHub API request timed out") from exc
+        except httpx.RequestError as exc:
+            raise ToolError("GitHub API is unavailable") from exc
+
+        if response.status_code == 401:
+            raise ToolError("GitHub rejected the configured write token")
+        if response.status_code == 403:
+            if response.headers.get("X-RateLimit-Remaining") == "0" or response.headers.get("Retry-After"):
+                raise ToolError("GitHub API rate limit exceeded; try again later")
+            raise ToolError("GitHub denied the write; check write token permissions")
+        if response.status_code == 404:
+            raise ToolError("GitHub resource was not found or is not accessible")
+        if response.status_code == 429:
+            raise ToolError("GitHub API rate limit exceeded; try again later")
+        if response.is_error:
+            raise ToolError(f"GitHub API returned HTTP {response.status_code}")
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ToolError("GitHub API returned an invalid response") from exc
