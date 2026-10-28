@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from functools import wraps
@@ -63,7 +64,15 @@ def audit_tool(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    sensitive_key = re.compile(
+        r"token|secret|password|content|body|payload|message|title|description",
+        re.IGNORECASE,
+    )
     return {
-        key: redact(value) if isinstance(value, str) else value
+        key: "[OMITTED]"
+        if sensitive_key.search(key)
+        else redact(value)
+        if isinstance(value, str)
+        else value
         for key, value in arguments.items()
     }

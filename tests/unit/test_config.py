@@ -31,3 +31,23 @@ def test_invalid_github_api_url_raises(monkeypatch) -> None:
         assert False, "ValueError should have been raised"
     except ValueError as error:
         assert "HTTP or HTTPS" in str(error)
+
+
+def test_write_tools_are_disabled_and_workflow_path_blocked_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("ENABLE_WRITE_TOOLS", raising=False)
+    monkeypatch.delenv("BLOCKED_GITHUB_PATHS", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.enable_write_tools is False
+    assert settings.blocked_github_paths == {".github/workflows"}
+
+
+def test_invalid_write_tools_flag_is_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_WRITE_TOOLS", "yes")
+
+    try:
+        Settings.from_env()
+        assert False, "ValueError should have been raised"
+    except ValueError as error:
+        assert "ENABLE_WRITE_TOOLS" in str(error)
