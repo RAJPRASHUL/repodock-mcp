@@ -13,6 +13,7 @@ from .prompts import register as register_prompts
 from .resources import register as register_resources
 from .tools.docker_read import register as register_docker_tools
 from .tools.github_read import register as register_github_tools
+from .tools.write import register as register_write_tools
 
 log = logging.getLogger(__name__)
 mcp = FastMCP("DevOps Assistant")
@@ -21,6 +22,7 @@ register_github_tools(mcp, GitHubClient(settings))
 register_docker_tools(mcp, DockerClient(settings))
 register_resources(mcp, settings)
 register_prompts(mcp)
+register_write_tools(mcp, settings, GitHubClient(settings), DockerClient(settings))
 
 
 @mcp.tool
@@ -78,6 +80,7 @@ def config_status() -> dict[str, str | bool]:
     settings = load_settings()
     return {
         "github_token_configured": bool(settings.github_token),
+        "github_write_token_configured": bool(settings.github_write_token),
         "allowed_github_repos": len(settings.allowed_github_repos),
         "allowed_docker_containers": len(settings.allowed_docker_containers),
         "enable_write_tools": settings.enable_write_tools,
