@@ -3,14 +3,13 @@ import logging
 import docker
 import httpx
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 
 from .audit import audit_tool
 from .config import load_settings
-from .services.docker_client import DockerClient
-from .services.github_client import GitHubClient
 from .prompts import register as register_prompts
 from .resources import register as register_resources
+from .services.docker_client import DockerClient
+from .services.github_client import GitHubClient
 from .tools.docker_read import register as register_docker_tools
 from .tools.github_read import register as register_github_tools
 from .tools.write import register as register_write_tools
@@ -32,30 +31,37 @@ def health_check(name: str = "developer") -> str:
     settings = load_settings()
     checks: list[str] = []
 
-    checks.append("GitHub token configured" if settings.github_token else "GitHub token missing")
-    checks.append("GitHub API base URL configured" if settings.github_api_base_url else "GitHub API base URL missing")
+    checks.append(
+        "GitHub token configured" if settings.github_token else "GitHub token missing"
+    )
+    checks.append(
+        "GitHub API base URL configured"
+        if settings.github_api_base_url
+        else "GitHub API base URL missing"
+    )
 
     docker_ok = False
     docker_status = "Docker unavailable"
     try:
         docker_ok = docker.from_env().ping()
         docker_status = "Docker reachable" if docker_ok else "Docker ping failed"
-    except Exception:
+    except (docker.errors.DockerException, OSError):
         log.exception("Docker connectivity check failed")
         docker_status = "Docker unavailable"
     checks.append(docker_status)
 
-    github_ok = False
-    github_status = "GitHub token invalid"
+    github_status = "GitHub token not checked"
     if settings.github_token:
         try:
             response = httpx.get(
                 f"{settings.github_api_base_url}/user",
-                headers={"Authorization": f"Bearer {settings.github_token}", "Accept": "application/vnd.github+json"},
+                headers={
+                    "Authorization": f"Bearer {settings.github_token}",
+                    "Accept": "application/vnd.github+json",
+                },
                 timeout=10.0,
             )
             if response.status_code == 200:
-                github_ok = True
                 github_status = "GitHub token valid"
             elif response.status_code == 401:
                 github_status = "GitHub token invalid"
@@ -67,15 +73,12 @@ def health_check(name: str = "developer") -> str:
         github_status = "GitHub token missing"
     checks.append(github_status)
 
-    summary = f"Hello, {name}! Your MCP server is working. Checks: {', '.join(checks)}."
-    if not (settings.github_token and docker_ok and github_ok):
-        raise ToolError("One or more required checks failed; see the health summary for details.")
-    return summary
+    return f"Hello, {name}! Checks: {', '.join(checks)}."
 
 
 @mcp.tool
 @audit_tool
-def config_status() -> dict[str, str | bool]:
+def config_status() -> dict[str, str | int | bool]:
     """Return safe configuration status without exposing secret values."""
     settings = load_settings()
     return {
