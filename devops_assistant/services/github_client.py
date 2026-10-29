@@ -23,7 +23,9 @@ class GitHubClient:
 
     def require_write_token(self) -> None:
         if not self.settings.github_write_token:
-            raise ToolError("GITHUB_WRITE_TOKEN is required for GitHub write operations")
+            raise ToolError(
+                "GITHUB_WRITE_TOKEN is required for GitHub write operations"
+            )
         if self.settings.github_write_token == self.settings.github_token:
             raise ToolError("GitHub writes require a separate GITHUB_WRITE_TOKEN")
 
@@ -65,7 +67,9 @@ class GitHubClient:
         if response.status_code == 401:
             raise ToolError("GitHub rejected the configured token")
         if response.status_code == 403:
-            if response.headers.get("X-RateLimit-Remaining") == "0" or response.headers.get("Retry-After"):
+            if response.headers.get(
+                "X-RateLimit-Remaining"
+            ) == "0" or response.headers.get("Retry-After"):
                 raise ToolError("GitHub API rate limit exceeded; try again later")
             raise ToolError("GitHub denied the request; check token permissions")
         if response.status_code == 404:
@@ -80,7 +84,9 @@ class GitHubClient:
         except ValueError as exc:
             raise ToolError("GitHub API returned an invalid response") from exc
 
-    def _paginate(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def _paginate(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         query = dict(params or {})
         query["per_page"] = _PER_PAGE
         results: list[dict[str, Any]] = []
@@ -97,7 +103,9 @@ class GitHubClient:
         return results
 
     def list_repositories(self, limit_count: int) -> list[dict[str, Any]]:
-        repositories = self._paginate("user/repos", {"sort": "updated", "direction": "desc"})
+        repositories = self._paginate(
+            "user/repos", {"sort": "updated", "direction": "desc"}
+        )
         if self.settings.allowed_github_repos:
             allowed = {item.casefold() for item in self.settings.allowed_github_repos}
             repositories = [
@@ -138,7 +146,9 @@ class GitHubClient:
             }
         )
 
-    def list_files(self, repository: str, path: str, ref: str | None, limit_count: int) -> list[dict[str, Any]]:
+    def list_files(
+        self, repository: str, path: str, ref: str | None, limit_count: int
+    ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
         path = self._validate_path(path, allow_empty=True)
         encoded_path = quote(path, safe="/")
@@ -180,7 +190,9 @@ class GitHubClient:
     def get_branch_sha(self, repository: str, branch: str) -> str:
         repository = self.validate_repository(repository)
         self._validate_branch_name(branch)
-        data = self._request(f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}")
+        data = self._request(
+            f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}"
+        )
         sha = (data.get("object") or {}).get("sha") if isinstance(data, dict) else None
         if not isinstance(sha, str) or not sha:
             raise ToolError("GitHub API returned an invalid branch reference")
@@ -194,19 +206,25 @@ class GitHubClient:
             raise ToolError("GitHub API returned invalid repository metadata")
         return default_branch
 
-    def validate_write_branch(self, repository: str, branch: str, require_existing: bool = True) -> str:
+    def validate_write_branch(
+        self, repository: str, branch: str, require_existing: bool = True
+    ) -> str:
         repository = self.validate_write_repository(repository)
         self._validate_branch_name(branch)
         prefix = self.settings.github_write_branch_prefix
         if not branch.startswith(prefix):
             raise PolicyDeniedError(f"Write branches must start with '{prefix}'")
         if branch.casefold() == self.get_default_branch(repository).casefold():
-            raise PolicyDeniedError("Writing to the repository default branch is denied")
+            raise PolicyDeniedError(
+                "Writing to the repository default branch is denied"
+            )
         if require_existing:
             self.get_branch_sha(repository, branch)
         return branch
 
-    def prepare_branch_creation(self, repository: str, branch: str, base_branch: str) -> dict[str, str]:
+    def prepare_branch_creation(
+        self, repository: str, branch: str, base_branch: str
+    ) -> dict[str, str]:
         repository = self.validate_write_repository(repository)
         self._validate_branch_name(branch)
         if not branch.startswith(self.settings.github_write_branch_prefix):
@@ -215,9 +233,16 @@ class GitHubClient:
             )
         self._validate_branch_name(base_branch)
         base_sha = self.get_branch_sha(repository, base_branch)
-        return {"repository": repository, "branch": branch, "base_branch": base_branch, "base_sha": base_sha}
+        return {
+            "repository": repository,
+            "branch": branch,
+            "base_branch": base_branch,
+            "base_sha": base_sha,
+        }
 
-    def create_branch(self, repository: str, branch: str, base_sha: str) -> dict[str, Any]:
+    def create_branch(
+        self, repository: str, branch: str, base_sha: str
+    ) -> dict[str, Any]:
         repository = self.validate_write_repository(repository)
         self._validate_branch_name(branch)
         if not branch.startswith(self.settings.github_write_branch_prefix):
@@ -232,7 +257,11 @@ class GitHubClient:
         return self._shape(
             {
                 "ref": data.get("ref") if isinstance(data, dict) else None,
-                "sha": ((data.get("object") or {}).get("sha") if isinstance(data, dict) else None),
+                "sha": (
+                    (data.get("object") or {}).get("sha")
+                    if isinstance(data, dict)
+                    else None
+                ),
             }
         )
 
@@ -248,13 +277,19 @@ class GitHubClient:
         path = self._validate_writable_file_path(path)
         self._validate_blocked_path(path)
         if self._is_sensitive_path(path):
-            raise PolicyDeniedError("Writes to sensitive credential files are blocked by policy")
+            raise PolicyDeniedError(
+                "Writes to sensitive credential files are blocked by policy"
+            )
         if not message.strip() or len(message) > 200:
             raise InvalidInputError("Commit message must contain 1 to 200 characters")
         if redact(content) != content:
-            raise PolicyDeniedError("File content appears to contain a secret and cannot be staged")
+            raise PolicyDeniedError(
+                "File content appears to contain a secret and cannot be staged"
+            )
         if len(content) > max(1, self.settings.max_output_chars // 2):
-            raise InvalidInputError("File content is too large to show in the confirmation response")
+            raise InvalidInputError(
+                "File content is too large to show in the confirmation response"
+            )
         self.validate_write_branch(repository, branch)
 
         encoded_path = quote(path, safe="/")
@@ -286,13 +321,19 @@ class GitHubClient:
         path = self._validate_writable_file_path(path)
         self._validate_blocked_path(path)
         if self._is_sensitive_path(path):
-            raise PolicyDeniedError("Writes to sensitive credential files are blocked by policy")
+            raise PolicyDeniedError(
+                "Writes to sensitive credential files are blocked by policy"
+            )
         if redact(content) != content or redact(message) != message:
-            raise PolicyDeniedError("File content or commit message appears to contain a secret")
+            raise PolicyDeniedError(
+                "File content or commit message appears to contain a secret"
+            )
         if not message.strip() or len(message) > 200:
             raise InvalidInputError("Commit message must contain 1 to 200 characters")
         if len(content) > max(1, self.settings.max_output_chars // 2):
-            raise InvalidInputError("File content is too large to show in the confirmation response")
+            raise InvalidInputError(
+                "File content is too large to show in the confirmation response"
+            )
         self.validate_write_branch(repository, branch)
         payload: dict[str, Any] = {
             "message": message,
@@ -311,7 +352,11 @@ class GitHubClient:
             {
                 "commit_sha": (commit or {}).get("sha"),
                 "html_url": (commit or {}).get("html_url"),
-                "content_path": ((data.get("content") or {}).get("path") if isinstance(data, dict) else None),
+                "content_path": (
+                    (data.get("content") or {}).get("path")
+                    if isinstance(data, dict)
+                    else None
+                ),
                 "branch": branch,
             }
         )
@@ -326,9 +371,13 @@ class GitHubClient:
     ) -> dict[str, Any]:
         repository = self.validate_write_repository(repository)
         if not title.strip() or len(title) > 256:
-            raise InvalidInputError("Pull request title must contain 1 to 256 characters")
+            raise InvalidInputError(
+                "Pull request title must contain 1 to 256 characters"
+            )
         if len(body) > self.settings.max_output_chars // 2:
-            raise InvalidInputError("Pull request body is too large to show in the confirmation response")
+            raise InvalidInputError(
+                "Pull request body is too large to show in the confirmation response"
+            )
         if redact(title) != title or redact(body) != body:
             raise PolicyDeniedError("Pull request details appear to contain a secret")
         self.validate_write_branch(repository, head)
@@ -346,7 +395,9 @@ class GitHubClient:
             }
         )
 
-    def list_commits(self, repository: str, branch: str | None, limit_count: int) -> list[dict[str, Any]]:
+    def list_commits(
+        self, repository: str, branch: str | None, limit_count: int
+    ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
         params: dict[str, Any] = {}
         if branch:
@@ -357,17 +408,25 @@ class GitHubClient:
                 {
                     "sha": item.get("sha"),
                     "message": (item.get("commit") or {}).get("message"),
-                    "author": ((item.get("commit") or {}).get("author") or {}).get("name"),
-                    "date": ((item.get("commit") or {}).get("author") or {}).get("date"),
+                    "author": ((item.get("commit") or {}).get("author") or {}).get(
+                        "name"
+                    ),
+                    "date": ((item.get("commit") or {}).get("author") or {}).get(
+                        "date"
+                    ),
                     "html_url": item.get("html_url"),
                 }
             )
             for item in data[:limit_count]
         ]
 
-    def list_issues(self, repository: str, state: str, limit_count: int) -> list[dict[str, Any]]:
+    def list_issues(
+        self, repository: str, state: str, limit_count: int
+    ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
-        data = self._paginate(f"repos/{repository}/issues", {"state": state, "sort": "updated"})
+        data = self._paginate(
+            f"repos/{repository}/issues", {"state": state, "sort": "updated"}
+        )
         issues = [item for item in data if "pull_request" not in item]
         return [
             self._shape(
@@ -383,9 +442,13 @@ class GitHubClient:
             for item in issues[:limit_count]
         ]
 
-    def list_pull_requests(self, repository: str, state: str, limit_count: int) -> list[dict[str, Any]]:
+    def list_pull_requests(
+        self, repository: str, state: str, limit_count: int
+    ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
-        data = self._paginate(f"repos/{repository}/pulls", {"state": state, "sort": "updated"})
+        data = self._paginate(
+            f"repos/{repository}/pulls", {"state": state, "sort": "updated"}
+        )
         return [
             self._shape(
                 {
@@ -427,10 +490,8 @@ class GitHubClient:
         if (
             not branch
             or len(branch) > 240
-            or branch.startswith("/")
-            or branch.endswith("/")
-            or branch.startswith(".")
-            or branch.endswith(".")
+            or branch.startswith(("/", "."))
+            or branch.endswith(("/", "."))
             or ".." in branch
             or "@{" in branch
             or "//" in branch
@@ -442,7 +503,9 @@ class GitHubClient:
     @classmethod
     def _validate_writable_file_path(cls, path: str) -> str:
         if path.startswith("/") or path.endswith("/") or "//" in path:
-            raise InvalidInputError("Write path must be a normalized repository-relative file path")
+            raise InvalidInputError(
+                "Write path must be a normalized repository-relative file path"
+            )
         return cls._validate_path(path, allow_empty=False)
 
     def _validate_blocked_path(self, path: str) -> None:
@@ -450,7 +513,9 @@ class GitHubClient:
         blocked = {".github/workflows"} | {
             item.casefold().strip("/") for item in self.settings.blocked_github_paths
         }
-        if any(normalized == item or normalized.startswith(f"{item}/") for item in blocked):
+        if any(
+            normalized == item or normalized.startswith(f"{item}/") for item in blocked
+        ):
             raise PolicyDeniedError("Writes to this GitHub path are blocked by policy")
 
     @staticmethod
@@ -466,7 +531,9 @@ class GitHubClient:
     def validate_write_repository(self, repository: str) -> str:
         repository = self.validate_repository(repository)
         if not self.settings.allowed_github_repos:
-            raise PolicyDeniedError("GitHub writes require an explicit repository allowlist")
+            raise PolicyDeniedError(
+                "GitHub writes require an explicit repository allowlist"
+            )
         return repository
 
     def _write_request(self, method: str, path: str, payload: dict[str, Any]) -> Any:
@@ -493,7 +560,9 @@ class GitHubClient:
         if response.status_code == 401:
             raise ToolError("GitHub rejected the configured write token")
         if response.status_code == 403:
-            if response.headers.get("X-RateLimit-Remaining") == "0" or response.headers.get("Retry-After"):
+            if response.headers.get(
+                "X-RateLimit-Remaining"
+            ) == "0" or response.headers.get("Retry-After"):
                 raise ToolError("GitHub API rate limit exceeded; try again later")
             raise ToolError("GitHub denied the write; check write token permissions")
         if response.status_code == 404:

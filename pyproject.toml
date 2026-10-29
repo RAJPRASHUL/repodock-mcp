@@ -10,8 +10,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "respx"]
+dev = ["pytest", "pytest-asyncio", "respx", "ruff"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["integration: opt-in tests against authorized GitHub or Docker resources"]
+
+[tool.setuptools.packages.find]
+include = ["devops_assistant*"]
+exclude = ["tests*"]

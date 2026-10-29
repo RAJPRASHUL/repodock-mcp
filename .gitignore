@@ -3,4 +3,6 @@
 logs/
 __pycache__/
 .pytest_cache/
+*.egg-info/
 implementation.md
+README.md
