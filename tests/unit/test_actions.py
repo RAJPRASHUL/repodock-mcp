@@ -56,7 +56,7 @@ def test_expired_confirmation_cannot_execute(monkeypatch) -> None:
     current_time = 100.0
     monkeypatch.setattr("devops_assistant.actions.time.monotonic", lambda: current_time)
     monkeypatch.setattr("devops_assistant.actions.audit_tool_call", lambda *args: None)
-    staged = json.loads(manager.stage("test", "target", "action", {}, lambda: {}, 1000))
+    staged = json.loads(manager.stage("test", "target", "action", {}, dict, 1000))
     current_time += 301
 
     with pytest.raises(ToolError, match="invalid or expired"):
@@ -72,7 +72,7 @@ def test_confirmation_preview_must_fit_configured_output_limit() -> None:
             "target",
             "action",
             {"proposed_content": "x" * 100},
-            lambda: {},
+            dict,
             20,
         )
 

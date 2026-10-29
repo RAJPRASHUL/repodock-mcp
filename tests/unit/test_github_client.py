@@ -43,7 +43,9 @@ def test_read_file_redacts_and_bounds_content() -> None:
     content = "token=ghp_examplesecret\n" + ("a" * 100)
     encoded = base64.b64encode(content.encode()).decode()
     respx.get("https://api.github.com/repos/owner/repo/contents/README.md").mock(
-        return_value=httpx.Response(200, json={"encoding": "base64", "content": encoded})
+        return_value=httpx.Response(
+            200, json={"encoding": "base64", "content": encoded}
+        )
     )
 
     result = make_client().read_file("owner/repo", "README.md", None)
@@ -123,17 +125,24 @@ def test_file_commit_requires_separate_write_token_and_prefixed_branch() -> None
     respx.get("https://api.github.com/repos/owner/repo/contents/README.md").mock(
         return_value=httpx.Response(200, json={"sha": "file-sha"})
     )
-    put_route = respx.put("https://api.github.com/repos/owner/repo/contents/README.md").mock(
+    put_route = respx.put(
+        "https://api.github.com/repos/owner/repo/contents/README.md"
+    ).mock(
         return_value=httpx.Response(
             200,
             json={
-                "commit": {"sha": "commit-sha", "html_url": "https://github.com/owner/repo/commit/commit-sha"},
+                "commit": {
+                    "sha": "commit-sha",
+                    "html_url": "https://github.com/owner/repo/commit/commit-sha",
+                },
                 "content": {"path": "README.md"},
             },
         )
     )
 
-    details = client.prepare_file_update("owner/repo", "README.md", "ai/change", "safe content", "Update")
+    details = client.prepare_file_update(
+        "owner/repo", "README.md", "ai/change", "safe content", "Update"
+    )
     result = client.commit_file(
         "owner/repo",
         "README.md",
@@ -185,11 +194,17 @@ def test_pull_request_creation_uses_prefixed_branch_and_separate_token() -> None
     post_route = respx.post("https://api.github.com/repos/owner/repo/pulls").mock(
         return_value=httpx.Response(
             201,
-            json={"number": 12, "html_url": "https://github.com/owner/repo/pull/12", "state": "open"},
+            json={
+                "number": 12,
+                "html_url": "https://github.com/owner/repo/pull/12",
+                "state": "open",
+            },
         )
     )
 
-    result = client.create_pull_request("owner/repo", "ai/change", "main", "Title", "Body")
+    result = client.create_pull_request(
+        "owner/repo", "ai/change", "main", "Title", "Body"
+    )
 
     assert result["number"] == 12
     assert post_route.calls[0].request.headers["Authorization"] == "Bearer write-token"
@@ -215,6 +230,7 @@ def test_sensitive_workflow_paths_are_blocked() -> None:
 
     with pytest.raises(ToolError, match="Writes to this GitHub path are blocked"):
         client._validate_blocked_path(".github/workflows/deploy.yml")
+
 
 def test_credential_files_and_secret_content_are_rejected_before_network() -> None:
     client = make_client(github_write_token="write-token")

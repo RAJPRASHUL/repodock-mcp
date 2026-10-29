@@ -20,7 +20,14 @@ def ensure_audit_log() -> None:
     AUDIT_LOG_PATH.touch(exist_ok=True)
 
 
-def audit_tool_call(tool_name: str, arguments: dict[str, Any], decision: str, status: str, error: str | None = None, latency_ms: int | None = None) -> None:
+def audit_tool_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+    decision: str,
+    status: str,
+    error: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
     ensure_audit_log()
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -56,7 +63,14 @@ def audit_tool(func: Callable[..., Any]) -> Callable[..., Any]:
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             try:
-                audit_tool_call(tool_name, redact_arguments(kwargs), decision, status, error, latency_ms)
+                audit_tool_call(
+                    tool_name,
+                    redact_arguments(kwargs),
+                    decision,
+                    status,
+                    error,
+                    latency_ms,
+                )
             except Exception:
                 log.exception("Failed to write audit log for %s", tool_name)
 

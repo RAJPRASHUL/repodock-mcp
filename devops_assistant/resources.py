@@ -9,7 +9,7 @@ from fastmcp.exceptions import ToolError
 
 from . import audit
 from .config import Settings
-from .security import limit, redact
+from .security import redact
 
 log = logging.getLogger(__name__)
 _RECENT_AUDIT_COUNT = 20

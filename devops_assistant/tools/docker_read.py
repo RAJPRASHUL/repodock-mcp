@@ -4,8 +4,8 @@ from typing import Any
 from fastmcp import FastMCP
 
 from ..audit import audit_tool
-from ..services.docker_client import DockerClient
 from ..security import limit
+from ..services.docker_client import DockerClient
 
 
 def _json_result(data: Any, max_chars: int) -> str:
@@ -31,7 +31,9 @@ def register(mcp: FastMCP, client: DockerClient) -> None:
     @audit_tool
     def docker_container_status(name: str) -> str:
         """Return selected status metadata for an allowlisted container."""
-        return _json_result(client.container_status(name), client.settings.max_output_chars)
+        return _json_result(
+            client.container_status(name), client.settings.max_output_chars
+        )
 
     @mcp.tool
     @audit_tool
@@ -43,4 +45,6 @@ def register(mcp: FastMCP, client: DockerClient) -> None:
     @audit_tool
     def docker_inspect_container(name: str) -> str:
         """Return filtered container metadata without environment variables or host source paths."""
-        return _json_result(client.inspect_container(name), client.settings.max_output_chars)
+        return _json_result(
+            client.inspect_container(name), client.settings.max_output_chars
+        )

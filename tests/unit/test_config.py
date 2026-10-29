@@ -33,7 +33,9 @@ def test_invalid_github_api_url_raises(monkeypatch) -> None:
         assert "HTTP or HTTPS" in str(error)
 
 
-def test_write_tools_are_disabled_and_workflow_path_blocked_by_default(monkeypatch) -> None:
+def test_write_tools_are_disabled_and_workflow_path_blocked_by_default(
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("ENABLE_WRITE_TOOLS", raising=False)
     monkeypatch.delenv("BLOCKED_GITHUB_PATHS", raising=False)
 

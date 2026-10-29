@@ -23,7 +23,12 @@ def make_container(name: str = "api", logs: bytes = b"ready\n") -> SimpleNamespa
         "Config": {"Image": "example/api:latest", "Env": ["PASSWORD=secret-value"]},
         "NetworkSettings": {"Ports": {"8080/tcp": [{"HostPort": "8080"}]}},
         "Mounts": [
-            {"Type": "bind", "Source": "C:\\private\\host\\path", "Destination": "/app", "RW": False}
+            {
+                "Type": "bind",
+                "Source": "C:\\private\\host\\path",
+                "Destination": "/app",
+                "RW": False,
+            }
         ],
         "RestartCount": 1,
         "Created": "2026-01-01T00:00:00Z",

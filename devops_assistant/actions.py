@@ -54,11 +54,15 @@ class ActionManager:
         if len(serialized) > max_output_chars:
             raise ToolError("Confirmation details exceed the configured output limit")
 
-        pending = PendingAction(operation, target, description, preview, execute, expires_at)
+        pending = PendingAction(
+            operation, target, description, preview, execute, expires_at
+        )
         with self._lock:
             self._remove_expired(time.monotonic())
             if len(self._pending) >= _MAX_PENDING_ACTIONS:
-                raise ToolError("Too many pending actions; wait for existing confirmations to expire")
+                raise ToolError(
+                    "Too many pending actions; wait for existing confirmations to expire"
+                )
             self._pending[token] = pending
         return serialized
 
@@ -82,7 +86,9 @@ class ActionManager:
             result = action.execute()
         except Exception as exc:
             self._audit_action(action, "error", redact(str(exc)), started)
-            log.warning("Confirmed %s action failed for %s", action.operation, action.target)
+            log.warning(
+                "Confirmed %s action failed for %s", action.operation, action.target
+            )
             raise
 
         self._audit_action(action, "success", None, started)
@@ -93,7 +99,9 @@ class ActionManager:
         )
 
     def _remove_expired(self, now: float) -> None:
-        expired = [token for token, action in self._pending.items() if action.expires_at <= now]
+        expired = [
+            token for token, action in self._pending.items() if action.expires_at <= now
+        ]
         for token in expired:
             del self._pending[token]
 

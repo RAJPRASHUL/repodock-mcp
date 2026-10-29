@@ -57,7 +57,9 @@ def register(
             raise PolicyDeniedError("Commit message appears to contain a secret")
         details = github.prepare_file_update(repository, path, branch, content, message)
         operation = "Update" if details["sha"] else "Create"
-        description = f"{operation} {details['path']} in {repository} on branch {branch}"
+        description = (
+            f"{operation} {details['path']} in {repository} on branch {branch}"
+        )
         return action_manager.stage(
             "github_commit_file",
             f"{repository}:{branch}:{path}",
@@ -93,9 +95,13 @@ def register(
         """Stage a pull request from an allowlisted prefixed branch for human review; no merge operation is available."""
         github.require_write_token()
         if not title.strip() or len(title) > 256:
-            raise InvalidInputError("Pull request title must contain 1 to 256 characters")
+            raise InvalidInputError(
+                "Pull request title must contain 1 to 256 characters"
+            )
         if len(body) > settings.max_output_chars // 2:
-            raise InvalidInputError("Pull request body is too large to show in the confirmation response")
+            raise InvalidInputError(
+                "Pull request body is too large to show in the confirmation response"
+            )
         if redact(title) != title or redact(body) != body:
             raise PolicyDeniedError("Pull request details appear to contain a secret")
         github.validate_write_branch(repository, head)

@@ -1,5 +1,5 @@
-from typing import Any
 import re
+from typing import Any
 
 import docker
 from docker.errors import APIError, DockerException, NotFound
@@ -22,17 +22,25 @@ class DockerClient:
             try:
                 self._client = docker.from_env(timeout=10)
             except DockerException as exc:
-                raise ToolError("Docker is unavailable; check the daemon and connection settings") from exc
+                raise ToolError(
+                    "Docker is unavailable; check the daemon and connection settings"
+                ) from exc
             except OSError as exc:
-                raise ToolError("Docker connection settings are invalid or unavailable") from exc
+                raise ToolError(
+                    "Docker connection settings are invalid or unavailable"
+                ) from exc
         return self._client
 
-    def list_containers(self, include_stopped: bool, limit_count: int) -> list[dict[str, Any]]:
+    def list_containers(
+        self, include_stopped: bool, limit_count: int
+    ) -> list[dict[str, Any]]:
         self._validate_limit(limit_count)
         try:
             containers = self._get_client().containers.list(all=include_stopped)
             results: list[dict[str, Any]] = []
-            allowed = {name.casefold() for name in self.settings.allowed_docker_containers}
+            allowed = {
+                name.casefold() for name in self.settings.allowed_docker_containers
+            }
             for container in containers:
                 name = self._container_name(container)
                 if allowed and name.casefold() not in allowed:
@@ -175,7 +183,9 @@ class DockerClient:
     def _get_write_container(self, name: str) -> Any:
         allowed = {item.casefold() for item in self.settings.allowed_docker_containers}
         if not allowed:
-            raise PolicyDeniedError("Docker writes require an explicit container allowlist")
+            raise PolicyDeniedError(
+                "Docker writes require an explicit container allowlist"
+            )
         if not name or name.casefold() not in allowed:
             raise PolicyDeniedError("Container is not on the configured allowlist")
         container = self._get_container(name)
@@ -187,15 +197,23 @@ class DockerClient:
 
     @staticmethod
     def _deny_production_container(name: str, attrs: dict[str, Any]) -> None:
-        production_marker = re.compile(r"(^|[-_.])(prod|production)([-_.]|$)", re.IGNORECASE)
+        production_marker = re.compile(
+            r"(^|[-_.])(prod|production)([-_.]|$)", re.IGNORECASE
+        )
         labels = (attrs.get("Config") or {}).get("Labels") or {}
         environment = " ".join(
             str(value)
             for key, value in labels.items()
-            if re.search(r"(?:^|[._-])(environment|env|stage|tier)(?:$|[._-])", key, re.IGNORECASE)
+            if re.search(
+                r"(?:^|[._-])(environment|env|stage|tier)(?:$|[._-])",
+                key,
+                re.IGNORECASE,
+            )
         )
         if production_marker.search(name) or production_marker.search(environment):
-            raise PolicyDeniedError("Docker write operations are blocked for production containers")
+            raise PolicyDeniedError(
+                "Docker write operations are blocked for production containers"
+            )
 
     def _require_allowed(self, name: str) -> None:
         if not name or not name.strip():
@@ -233,6 +251,9 @@ class DockerClient:
     def _map_docker_error(error: DockerException) -> ToolError:
         if isinstance(error, NotFound):
             return ToolError("Docker resource was not found")
-        if isinstance(error, APIError) and getattr(error, "status_code", None) in {401, 403}:
+        if isinstance(error, APIError) and getattr(error, "status_code", None) in {
+            401,
+            403,
+        }:
             return ToolError("Docker denied the request; check daemon permissions")
         return ToolError("Docker is unavailable or returned an error")

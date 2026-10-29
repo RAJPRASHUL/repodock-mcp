@@ -15,7 +15,9 @@ class Settings:
     max_log_lines: int = 200
     max_output_chars: int = 8000
     github_write_branch_prefix: str = "ai/"
-    blocked_github_paths: set[str] = field(default_factory=lambda: {".github/workflows"})
+    blocked_github_paths: set[str] = field(
+        default_factory=lambda: {".github/workflows"}
+    )
     enable_write_tools: bool = False
 
     @classmethod
@@ -32,9 +34,15 @@ class Settings:
         settings = cls(
             github_token=os.getenv("GITHUB_TOKEN") or None,
             github_write_token=os.getenv("GITHUB_WRITE_TOKEN") or None,
-            github_api_base_url=os.getenv("GITHUB_API_BASE_URL", "https://api.github.com"),
-            allowed_github_repos={item.strip() for item in raw_allowed_github.split(",") if item.strip()},
-            allowed_docker_containers={item.strip() for item in raw_allowed_docker.split(",") if item.strip()},
+            github_api_base_url=os.getenv(
+                "GITHUB_API_BASE_URL", "https://api.github.com"
+            ),
+            allowed_github_repos={
+                item.strip() for item in raw_allowed_github.split(",") if item.strip()
+            },
+            allowed_docker_containers={
+                item.strip() for item in raw_allowed_docker.split(",") if item.strip()
+            },
             max_log_lines=int(os.getenv("MAX_LOG_LINES", "200")),
             max_output_chars=int(os.getenv("MAX_OUTPUT_CHARS", "8000")),
             github_write_branch_prefix=os.getenv("GITHUB_WRITE_BRANCH_PREFIX", "ai/"),
@@ -52,10 +60,14 @@ class Settings:
         if settings.max_output_chars <= 0:
             raise ValueError("MAX_OUTPUT_CHARS must be greater than zero")
         if settings.enable_write_tools and not settings.github_write_branch_prefix:
-            raise ValueError("GITHUB_WRITE_BRANCH_PREFIX cannot be empty when write tools are enabled")
+            raise ValueError(
+                "GITHUB_WRITE_BRANCH_PREFIX cannot be empty when write tools are enabled"
+            )
         parsed_api_url = urlparse(settings.github_api_base_url)
         if parsed_api_url.scheme not in {"http", "https"} or not parsed_api_url.netloc:
-            raise ValueError("GITHUB_API_BASE_URL must be an absolute HTTP or HTTPS URL")
+            raise ValueError(
+                "GITHUB_API_BASE_URL must be an absolute HTTP or HTTPS URL"
+            )
         if parsed_api_url.username or parsed_api_url.password:
             raise ValueError("GITHUB_API_BASE_URL must not contain credentials")
 

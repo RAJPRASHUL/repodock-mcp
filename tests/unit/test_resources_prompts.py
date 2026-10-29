@@ -33,11 +33,18 @@ def test_allowed_targets_reports_empty_allowlists_as_unrestricted() -> None:
     assert result["docker_containers_unrestricted"] is True
 
 
-def test_recent_audit_returns_only_last_twenty_entries_and_redacts_secrets(tmp_path) -> None:
+def test_recent_audit_returns_only_last_twenty_entries_and_redacts_secrets(
+    tmp_path,
+) -> None:
     audit_path = tmp_path / "audit.jsonl"
     audit_path.write_text(
-        "".join(json.dumps({"tool": f"tool-{index}", "arguments": {"value": "ghp_example123"}}) + "\n"
-                for index in range(25)),
+        "".join(
+            json.dumps(
+                {"tool": f"tool-{index}", "arguments": {"value": "ghp_example123"}}
+            )
+            + "\n"
+            for index in range(25)
+        ),
         encoding="utf-8",
     )
 
@@ -64,7 +71,9 @@ def test_recent_audit_rejects_malformed_log_entry(tmp_path) -> None:
 
 def test_recent_audit_never_returns_truncated_invalid_json(tmp_path) -> None:
     audit_path = tmp_path / "audit.jsonl"
-    audit_path.write_text(json.dumps({"tool": "tool", "large": "x" * 100}) + "\n", encoding="utf-8")
+    audit_path.write_text(
+        json.dumps({"tool": "tool", "large": "x" * 100}) + "\n", encoding="utf-8"
+    )
     settings = Settings(max_output_chars=20)
 
     with pytest.raises(ToolError, match="exceeds the configured output limit"):
