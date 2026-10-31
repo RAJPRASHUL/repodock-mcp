@@ -1,3 +1,5 @@
+import asyncio
+
 from fastmcp import FastMCP
 
 from ..actions import action_manager
@@ -20,14 +22,20 @@ def register(
 
     @mcp.tool
     @audit_tool
-    def github_create_branch(repository: str, branch: str, base_branch: str) -> str:
+    async def github_create_branch(
+        repository: str, branch: str, base_branch: str
+    ) -> str:
         """Stage creation of an allowlisted GitHub branch; confirmation is required to create it."""
         github.require_write_token()
-        details = github.prepare_branch_creation(repository, branch, base_branch)
+        details = await github.prepare_branch_creation(repository, branch, base_branch)
         description = (
             f"Create branch {details['branch']} in {details['repository']} "
             f"from {details['base_branch']} ({details['base_sha']})"
         )
+
+        async def execute() -> dict:
+            return await github.create_branch(repository, branch, details["base_sha"])
+
         return action_manager.stage(
             "github_create_branch",
             f"{repository}:{branch}",
@@ -38,13 +46,13 @@ def register(
                 "base_branch": base_branch,
                 "base_commit": details["base_sha"],
             },
-            lambda: github.create_branch(repository, branch, details["base_sha"]),
+            execute,
             settings.max_output_chars,
         )
 
     @mcp.tool
     @audit_tool
-    def github_commit_file(
+    async def github_commit_file(
         repository: str,
         branch: str,
         path: str,
@@ -55,11 +63,24 @@ def register(
         github.require_write_token()
         if redact(message) != message:
             raise PolicyDeniedError("Commit message appears to contain a secret")
-        details = github.prepare_file_update(repository, path, branch, content, message)
+        details = await github.prepare_file_update(
+            repository, path, branch, content, message
+        )
         operation = "Update" if details["sha"] else "Create"
         description = (
             f"{operation} {details['path']} in {repository} on branch {branch}"
         )
+
+        async def execute() -> dict:
+            return await github.commit_file(
+                repository,
+                details["path"],
+                branch,
+                content,
+                message,
+                details["sha"],
+            )
+
         return action_manager.stage(
             "github_commit_file",
             f"{repository}:{branch}:{path}",
@@ -72,20 +93,13 @@ def register(
                 "existing_file": details["sha"] is not None,
                 "proposed_content": content,
             },
-            lambda: github.commit_file(
-                repository,
-                details["path"],
-                branch,
-                content,
-                message,
-                details["sha"],
-            ),
+            execute,
             settings.max_output_chars,
         )
 
     @mcp.tool
     @audit_tool
-    def github_create_pull_request(
+    async def github_create_pull_request(
         repository: str,
         head: str,
         base: str,
@@ -104,9 +118,13 @@ def register(
             )
         if redact(title) != title or redact(body) != body:
             raise PolicyDeniedError("Pull request details appear to contain a secret")
-        github.validate_write_branch(repository, head)
-        github.get_branch_sha(repository, base)
+        await github.validate_write_branch(repository, head)
+        await github.get_branch_sha(repository, base)
         description = f"Open pull request in {repository}: {head} -> {base} ({title})"
+
+        async def execute() -> dict:
+            return await github.create_pull_request(repository, head, base, title, body)
+
         return action_manager.stage(
             "github_create_pull_request",
             f"{repository}:{head}->{base}",
@@ -118,15 +136,15 @@ def register(
                 "title": title,
                 "body": body,
             },
-            lambda: github.create_pull_request(repository, head, base, title, body),
+            execute,
             settings.max_output_chars,
         )
 
     @mcp.tool
     @audit_tool
-    def docker_restart_container(name: str) -> str:
+    async def docker_restart_container(name: str) -> str:
         """Stage restart of an explicitly allowlisted non-production container; confirmation is required."""
-        details = docker.prepare_container_restart(name)
+        details = await asyncio.to_thread(docker.prepare_container_restart, name)
         description = f"Restart allowlisted development container {details['name']}"
         return action_manager.stage(
             "docker_restart_container",
@@ -138,6 +156,6 @@ def register(
         )
 
     @mcp.tool
-    def confirm_action(token: str) -> str:
+    async def confirm_action(token: str) -> str:
         """Perform exactly one staged action if its confirmation token is valid and unexpired."""
-        return action_manager.confirm(token, settings.enable_write_tools)
+        return await action_manager.confirm(token, settings.enable_write_tools)

@@ -1,3 +1,5 @@
+import asyncio
+
 import docker
 
 from devops_assistant import app
@@ -13,7 +15,7 @@ def test_health_check_reports_unavailable_services_without_secrets(monkeypatch) 
     monkeypatch.setattr(app, "load_settings", lambda: settings)
     monkeypatch.setattr(app.docker, "from_env", fail_docker_connection)
 
-    result = app.health_check.__wrapped__()
+    result = asyncio.run(app.health_check.__wrapped__())
 
     assert "GitHub token missing" in result
     assert "Docker unavailable" in result

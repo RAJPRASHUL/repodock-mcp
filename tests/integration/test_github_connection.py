@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import pytest
@@ -23,6 +24,6 @@ def test_read_repository_metadata_from_github() -> None:
         )
 
     repository = next(iter(settings.allowed_github_repos))
-    result = GitHubClient(settings).get_repository(repository)
+    result = asyncio.run(GitHubClient(settings).get_repository(repository))
 
     assert result["full_name"].casefold() == repository.casefold()

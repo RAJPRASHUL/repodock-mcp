@@ -43,22 +43,23 @@ class GitHubClient:
             raise PolicyDeniedError("Repository is not on the configured allowlist")
         return repository
 
-    def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
         if not self.settings.github_token:
             raise ToolError("GITHUB_TOKEN is required for GitHub tools")
 
         try:
-            response = httpx.get(
-                f"{self.base_url}/{path.lstrip('/')}",
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "Authorization": f"Bearer {self.settings.github_token}",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                params=params,
-                timeout=10.0,
-                follow_redirects=False,
-            )
+            async with httpx.AsyncClient(
+                timeout=10.0, follow_redirects=False
+            ) as client:
+                response = await client.get(
+                    f"{self.base_url}/{path.lstrip('/')}",
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "Authorization": f"Bearer {self.settings.github_token}",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    params=params,
+                )
         except httpx.TimeoutException as exc:
             raise ToolError("GitHub API request timed out") from exc
         except httpx.RequestError as exc:
@@ -84,7 +85,7 @@ class GitHubClient:
         except ValueError as exc:
             raise ToolError("GitHub API returned an invalid response") from exc
 
-    def _paginate(
+    async def _paginate(
         self, path: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         query = dict(params or {})
@@ -93,7 +94,7 @@ class GitHubClient:
 
         for page in range(1, _MAX_PAGES + 1):
             query["page"] = page
-            data = self._request(path, query)
+            data = await self._request(path, query)
             if not isinstance(data, list):
                 raise ToolError("GitHub API returned an unexpected response")
             results.extend(item for item in data if isinstance(item, dict))
@@ -102,8 +103,8 @@ class GitHubClient:
 
         return results
 
-    def list_repositories(self, limit_count: int) -> list[dict[str, Any]]:
-        repositories = self._paginate(
+    async def list_repositories(self, limit_count: int) -> list[dict[str, Any]]:
+        repositories = await self._paginate(
             "user/repos", {"sort": "updated", "direction": "desc"}
         )
         if self.settings.allowed_github_repos:
@@ -128,9 +129,9 @@ class GitHubClient:
             for repository in repositories[:limit_count]
         ]
 
-    def get_repository(self, repository: str) -> dict[str, Any]:
+    async def get_repository(self, repository: str) -> dict[str, Any]:
         repository = self.validate_repository(repository)
-        data = self._request(f"repos/{repository}")
+        data = await self._request(f"repos/{repository}")
         if not isinstance(data, dict):
             raise ToolError("GitHub API returned an unexpected repository response")
         return self._shape(
@@ -146,14 +147,16 @@ class GitHubClient:
             }
         )
 
-    def list_files(
+    async def list_files(
         self, repository: str, path: str, ref: str | None, limit_count: int
     ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
         path = self._validate_path(path, allow_empty=True)
         encoded_path = quote(path, safe="/")
         params = {"ref": ref} if ref else None
-        data = self._request(f"repos/{repository}/contents/{encoded_path}", params)
+        data = await self._request(
+            f"repos/{repository}/contents/{encoded_path}", params
+        )
         if not isinstance(data, list):
             raise ToolError("The requested GitHub path is not a directory")
 
@@ -170,12 +173,14 @@ class GitHubClient:
             if isinstance(item, dict)
         ]
 
-    def read_file(self, repository: str, path: str, ref: str | None) -> str:
+    async def read_file(self, repository: str, path: str, ref: str | None) -> str:
         repository = self.validate_repository(repository)
         path = self._validate_path(path, allow_empty=False)
         encoded_path = quote(path, safe="/")
         params = {"ref": ref} if ref else None
-        data = self._request(f"repos/{repository}/contents/{encoded_path}", params)
+        data = await self._request(
+            f"repos/{repository}/contents/{encoded_path}", params
+        )
         if not isinstance(data, dict):
             raise ToolError("The requested GitHub path is not a file")
         if data.get("encoding") != "base64" or not isinstance(data.get("content"), str):
@@ -187,10 +192,10 @@ class GitHubClient:
             raise ToolError("The requested file is not valid UTF-8 text") from exc
         return limit(redact(content), self.settings.max_output_chars)
 
-    def get_branch_sha(self, repository: str, branch: str) -> str:
+    async def get_branch_sha(self, repository: str, branch: str) -> str:
         repository = self.validate_repository(repository)
         self._validate_branch_name(branch)
-        data = self._request(
+        data = await self._request(
             f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}"
         )
         sha = (data.get("object") or {}).get("sha") if isinstance(data, dict) else None
@@ -198,15 +203,15 @@ class GitHubClient:
             raise ToolError("GitHub API returned an invalid branch reference")
         return sha
 
-    def get_default_branch(self, repository: str) -> str:
+    async def get_default_branch(self, repository: str) -> str:
         repository = self.validate_repository(repository)
-        data = self._request(f"repos/{repository}")
+        data = await self._request(f"repos/{repository}")
         default_branch = data.get("default_branch") if isinstance(data, dict) else None
         if not isinstance(default_branch, str) or not default_branch:
             raise ToolError("GitHub API returned invalid repository metadata")
         return default_branch
 
-    def validate_write_branch(
+    async def validate_write_branch(
         self, repository: str, branch: str, require_existing: bool = True
     ) -> str:
         repository = self.validate_write_repository(repository)
@@ -214,15 +219,15 @@ class GitHubClient:
         prefix = self.settings.github_write_branch_prefix
         if not branch.startswith(prefix):
             raise PolicyDeniedError(f"Write branches must start with '{prefix}'")
-        if branch.casefold() == self.get_default_branch(repository).casefold():
+        if branch.casefold() == (await self.get_default_branch(repository)).casefold():
             raise PolicyDeniedError(
                 "Writing to the repository default branch is denied"
             )
         if require_existing:
-            self.get_branch_sha(repository, branch)
+            await self.get_branch_sha(repository, branch)
         return branch
 
-    def prepare_branch_creation(
+    async def prepare_branch_creation(
         self, repository: str, branch: str, base_branch: str
     ) -> dict[str, str]:
         repository = self.validate_write_repository(repository)
@@ -232,7 +237,7 @@ class GitHubClient:
                 f"New branches must start with '{self.settings.github_write_branch_prefix}'"
             )
         self._validate_branch_name(base_branch)
-        base_sha = self.get_branch_sha(repository, base_branch)
+        base_sha = await self.get_branch_sha(repository, base_branch)
         return {
             "repository": repository,
             "branch": branch,
@@ -240,7 +245,7 @@ class GitHubClient:
             "base_sha": base_sha,
         }
 
-    def create_branch(
+    async def create_branch(
         self, repository: str, branch: str, base_sha: str
     ) -> dict[str, Any]:
         repository = self.validate_write_repository(repository)
@@ -249,7 +254,7 @@ class GitHubClient:
             raise PolicyDeniedError(
                 f"New branches must start with '{self.settings.github_write_branch_prefix}'"
             )
-        data = self._write_request(
+        data = await self._write_request(
             "POST",
             f"repos/{repository}/git/refs",
             {"ref": f"refs/heads/{branch}", "sha": base_sha},
@@ -265,7 +270,7 @@ class GitHubClient:
             }
         )
 
-    def prepare_file_update(
+    async def prepare_file_update(
         self,
         repository: str,
         path: str,
@@ -290,12 +295,12 @@ class GitHubClient:
             raise InvalidInputError(
                 "File content is too large to show in the confirmation response"
             )
-        self.validate_write_branch(repository, branch)
+        await self.validate_write_branch(repository, branch)
 
         encoded_path = quote(path, safe="/")
         sha: str | None = None
         try:
-            data = self._request(
+            data = await self._request(
                 f"repos/{repository}/contents/{encoded_path}",
                 {"ref": branch},
             )
@@ -308,7 +313,7 @@ class GitHubClient:
 
         return {"repository": repository, "path": path, "branch": branch, "sha": sha}
 
-    def commit_file(
+    async def commit_file(
         self,
         repository: str,
         path: str,
@@ -334,7 +339,7 @@ class GitHubClient:
             raise InvalidInputError(
                 "File content is too large to show in the confirmation response"
             )
-        self.validate_write_branch(repository, branch)
+        await self.validate_write_branch(repository, branch)
         payload: dict[str, Any] = {
             "message": message,
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
@@ -342,7 +347,7 @@ class GitHubClient:
         }
         if sha:
             payload["sha"] = sha
-        data = self._write_request(
+        data = await self._write_request(
             "PUT",
             f"repos/{repository}/contents/{quote(path, safe='/')}",
             payload,
@@ -361,7 +366,7 @@ class GitHubClient:
             }
         )
 
-    def create_pull_request(
+    async def create_pull_request(
         self,
         repository: str,
         head: str,
@@ -380,9 +385,9 @@ class GitHubClient:
             )
         if redact(title) != title or redact(body) != body:
             raise PolicyDeniedError("Pull request details appear to contain a secret")
-        self.validate_write_branch(repository, head)
-        self.get_branch_sha(repository, base)
-        data = self._write_request(
+        await self.validate_write_branch(repository, head)
+        await self.get_branch_sha(repository, base)
+        data = await self._write_request(
             "POST",
             f"repos/{repository}/pulls",
             {"title": title, "head": head, "base": base, "body": body},
@@ -395,14 +400,14 @@ class GitHubClient:
             }
         )
 
-    def list_commits(
+    async def list_commits(
         self, repository: str, branch: str | None, limit_count: int
     ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
         params: dict[str, Any] = {}
         if branch:
             params["sha"] = branch
-        data = self._paginate(f"repos/{repository}/commits", params)
+        data = await self._paginate(f"repos/{repository}/commits", params)
         return [
             self._shape(
                 {
@@ -420,11 +425,11 @@ class GitHubClient:
             for item in data[:limit_count]
         ]
 
-    def list_issues(
+    async def list_issues(
         self, repository: str, state: str, limit_count: int
     ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
-        data = self._paginate(
+        data = await self._paginate(
             f"repos/{repository}/issues", {"state": state, "sort": "updated"}
         )
         issues = [item for item in data if "pull_request" not in item]
@@ -442,11 +447,11 @@ class GitHubClient:
             for item in issues[:limit_count]
         ]
 
-    def list_pull_requests(
+    async def list_pull_requests(
         self, repository: str, state: str, limit_count: int
     ) -> list[dict[str, Any]]:
         repository = self.validate_repository(repository)
-        data = self._paginate(
+        data = await self._paginate(
             f"repos/{repository}/pulls", {"state": state, "sort": "updated"}
         )
         return [
@@ -536,22 +541,25 @@ class GitHubClient:
             )
         return repository
 
-    def _write_request(self, method: str, path: str, payload: dict[str, Any]) -> Any:
+    async def _write_request(
+        self, method: str, path: str, payload: dict[str, Any]
+    ) -> Any:
         self.require_write_token()
         token = self.settings.github_write_token
         try:
-            response = httpx.request(
-                method,
-                f"{self.base_url}/{path.lstrip('/')}",
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "Authorization": f"Bearer {token}",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                json=payload,
-                timeout=10.0,
-                follow_redirects=False,
-            )
+            async with httpx.AsyncClient(
+                timeout=10.0, follow_redirects=False
+            ) as client:
+                response = await client.request(
+                    method,
+                    f"{self.base_url}/{path.lstrip('/')}",
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "Authorization": f"Bearer {token}",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    json=payload,
+                )
         except httpx.TimeoutException as exc:
             raise ToolError("GitHub API request timed out") from exc
         except httpx.RequestError as exc:

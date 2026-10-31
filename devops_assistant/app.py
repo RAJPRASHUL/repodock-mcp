@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import docker
@@ -26,7 +27,7 @@ register_write_tools(mcp, settings, GitHubClient(settings), DockerClient(setting
 
 @mcp.tool
 @audit_tool
-def health_check(name: str = "developer") -> str:
+async def health_check(name: str = "developer") -> str:
     """Verify that the DevOps MCP server is running."""
     settings = load_settings()
     checks: list[str] = []
@@ -43,7 +44,7 @@ def health_check(name: str = "developer") -> str:
     docker_ok = False
     docker_status = "Docker unavailable"
     try:
-        docker_ok = docker.from_env().ping()
+        docker_ok = await asyncio.to_thread(lambda: docker.from_env().ping())
         docker_status = "Docker reachable" if docker_ok else "Docker ping failed"
     except (docker.errors.DockerException, OSError):
         log.exception("Docker connectivity check failed")
@@ -53,14 +54,14 @@ def health_check(name: str = "developer") -> str:
     github_status = "GitHub token not checked"
     if settings.github_token:
         try:
-            response = httpx.get(
-                f"{settings.github_api_base_url}/user",
-                headers={
-                    "Authorization": f"Bearer {settings.github_token}",
-                    "Accept": "application/vnd.github+json",
-                },
-                timeout=10.0,
-            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{settings.github_api_base_url}/user",
+                    headers={
+                        "Authorization": f"Bearer {settings.github_token}",
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
             if response.status_code == 200:
                 github_status = "GitHub token valid"
             elif response.status_code == 401:

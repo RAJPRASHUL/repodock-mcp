@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 import re
@@ -43,6 +44,42 @@ def audit_tool_call(
 
 
 def audit_tool(func: Callable[..., Any]) -> Callable[..., Any]:
+    if inspect.iscoroutinefunction(func):
+
+        @wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            tool_name = getattr(func, "__name__", func.__class__.__name__)
+            started = time.perf_counter()
+            decision = "allowed"
+            status = "error"
+            error: str | None = None
+            try:
+                result = await func(*args, **kwargs)
+                status = "success"
+                return result
+            except Exception as exc:
+                if isinstance(
+                    exc, (InvalidInputError, PolicyDeniedError, PermissionError)
+                ):
+                    decision = "denied"
+                error = redact(str(exc))
+                raise
+            finally:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                try:
+                    audit_tool_call(
+                        tool_name,
+                        redact_arguments(kwargs),
+                        decision,
+                        status,
+                        error,
+                        latency_ms,
+                    )
+                except Exception:
+                    log.exception("Failed to write audit log for %s", tool_name)
+
+        return async_wrapper
+
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         tool_name = getattr(func, "__name__", func.__class__.__name__)

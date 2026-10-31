@@ -1,9 +1,11 @@
+import asyncio
+import inspect
 import json
 import logging
 import secrets
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,7 +25,7 @@ class PendingAction:
     target: str
     description: str
     preview: dict[str, Any]
-    execute: Callable[[], dict[str, Any]]
+    execute: Callable[[], dict[str, Any] | Awaitable[dict[str, Any]]]
     expires_at: float
 
 
@@ -38,7 +40,7 @@ class ActionManager:
         target: str,
         description: str,
         preview: dict[str, Any],
-        execute: Callable[[], dict[str, Any]],
+        execute: Callable[[], dict[str, Any] | Awaitable[dict[str, Any]]],
         max_output_chars: int,
     ) -> str:
         token = secrets.token_urlsafe(32)
@@ -66,7 +68,7 @@ class ActionManager:
             self._pending[token] = pending
         return serialized
 
-    def confirm(self, token: str, enabled: bool) -> str:
+    async def confirm(self, token: str, enabled: bool) -> str:
         if not enabled:
             self._audit_invalid_confirmation()
             raise ToolError("Write tools are disabled")
@@ -83,7 +85,12 @@ class ActionManager:
 
         started = time.perf_counter()
         try:
-            result = action.execute()
+            if inspect.iscoroutinefunction(action.execute):
+                result = await action.execute()
+            else:
+                result = await asyncio.to_thread(action.execute)
+                if inspect.isawaitable(result):
+                    result = await result
         except Exception as exc:
             self._audit_action(action, "error", redact(str(exc)), started)
             log.warning(

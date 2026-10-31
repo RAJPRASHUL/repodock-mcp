@@ -21,7 +21,7 @@ def make_client(**overrides) -> GitHubClient:
 
 
 @respx.mock
-def test_list_repositories_filters_to_allowlist() -> None:
+async def test_list_repositories_filters_to_allowlist() -> None:
     route = respx.get("https://api.github.com/user/repos").mock(
         return_value=httpx.Response(
             200,
@@ -32,14 +32,14 @@ def test_list_repositories_filters_to_allowlist() -> None:
         )
     )
 
-    repositories = make_client().list_repositories(30)
+    repositories = await make_client().list_repositories(30)
 
     assert [repo["full_name"] for repo in repositories] == ["owner/repo"]
     assert route.calls[0].request.headers["Authorization"] == "Bearer test-token"
 
 
 @respx.mock
-def test_read_file_redacts_and_bounds_content() -> None:
+async def test_read_file_redacts_and_bounds_content() -> None:
     content = "token=ghp_examplesecret\n" + ("a" * 100)
     encoded = base64.b64encode(content.encode()).decode()
     respx.get("https://api.github.com/repos/owner/repo/contents/README.md").mock(
@@ -48,7 +48,7 @@ def test_read_file_redacts_and_bounds_content() -> None:
         )
     )
 
-    result = make_client().read_file("owner/repo", "README.md", None)
+    result = await make_client().read_file("owner/repo", "README.md", None)
 
     assert "ghp_examplesecret" not in result
     assert len(result) == 64
@@ -56,29 +56,29 @@ def test_read_file_redacts_and_bounds_content() -> None:
 
 
 @respx.mock
-def test_allowlist_denies_repository_before_network_request() -> None:
+async def test_allowlist_denies_repository_before_network_request() -> None:
     client = make_client()
 
     with pytest.raises(ToolError, match="allowlist"):
-        client.get_repository("someone/other")
+        await client.get_repository("someone/other")
 
     assert not respx.calls
 
 
 @respx.mock
-def test_api_errors_are_mapped_to_safe_messages() -> None:
+async def test_api_errors_are_mapped_to_safe_messages() -> None:
     respx.get("https://api.github.com/repos/owner/repo").mock(
         return_value=httpx.Response(404, json={"message": "private repository details"})
     )
 
     with pytest.raises(ToolError, match="not found or is not accessible") as error:
-        make_client().get_repository("owner/repo")
+        await make_client().get_repository("owner/repo")
 
     assert "private repository details" not in str(error.value)
 
 
 @respx.mock
-def test_rate_limit_errors_are_mapped() -> None:
+async def test_rate_limit_errors_are_mapped() -> None:
     respx.get("https://api.github.com/repos/owner/repo").mock(
         return_value=httpx.Response(
             403,
@@ -88,33 +88,33 @@ def test_rate_limit_errors_are_mapped() -> None:
     )
 
     with pytest.raises(ToolError, match="rate limit exceeded"):
-        make_client().get_repository("owner/repo")
+        await make_client().get_repository("owner/repo")
 
 
 @respx.mock
-def test_network_timeouts_are_mapped() -> None:
+async def test_network_timeouts_are_mapped() -> None:
     respx.get("https://api.github.com/repos/owner/repo").mock(
         side_effect=httpx.ConnectTimeout("request timed out")
     )
 
     with pytest.raises(ToolError, match="request timed out"):
-        make_client().get_repository("owner/repo")
+        await make_client().get_repository("owner/repo")
 
 
-def test_path_traversal_is_rejected() -> None:
+async def test_path_traversal_is_rejected() -> None:
     with pytest.raises(ToolError, match="Invalid GitHub path"):
-        make_client().read_file("owner/repo", "../secrets.txt", None)
+        await make_client().read_file("owner/repo", "../secrets.txt", None)
 
 
-def test_missing_token_fails_without_network_access() -> None:
+async def test_missing_token_fails_without_network_access() -> None:
     client = GitHubClient(Settings(github_token=None))
 
     with pytest.raises(ToolError, match="GITHUB_TOKEN is required"):
-        client.get_repository("owner/repo")
+        await client.get_repository("owner/repo")
 
 
 @respx.mock
-def test_file_commit_requires_separate_write_token_and_prefixed_branch() -> None:
+async def test_file_commit_requires_separate_write_token_and_prefixed_branch() -> None:
     client = make_client(github_write_token="write-token")
     respx.get("https://api.github.com/repos/owner/repo").mock(
         return_value=httpx.Response(200, json={"default_branch": "main"})
@@ -140,10 +140,10 @@ def test_file_commit_requires_separate_write_token_and_prefixed_branch() -> None
         )
     )
 
-    details = client.prepare_file_update(
+    details = await client.prepare_file_update(
         "owner/repo", "README.md", "ai/change", "safe content", "Update"
     )
-    result = client.commit_file(
+    result = await client.commit_file(
         "owner/repo",
         "README.md",
         "ai/change",
@@ -159,7 +159,7 @@ def test_file_commit_requires_separate_write_token_and_prefixed_branch() -> None
 
 
 @respx.mock
-def test_branch_creation_uses_only_confirmation_stage_data() -> None:
+async def test_branch_creation_uses_only_confirmation_stage_data() -> None:
     client = make_client(github_write_token="write-token")
     respx.get("https://api.github.com/repos/owner/repo/git/ref/heads/main").mock(
         return_value=httpx.Response(200, json={"object": {"sha": "base-sha"}})
@@ -171,8 +171,8 @@ def test_branch_creation_uses_only_confirmation_stage_data() -> None:
         )
     )
 
-    details = client.prepare_branch_creation("owner/repo", "ai/change", "main")
-    result = client.create_branch("owner/repo", "ai/change", details["base_sha"])
+    details = await client.prepare_branch_creation("owner/repo", "ai/change", "main")
+    result = await client.create_branch("owner/repo", "ai/change", details["base_sha"])
 
     assert result["sha"] == "new-branch-sha"
     assert post_route.calls[0].request.headers["Authorization"] == "Bearer write-token"
@@ -180,7 +180,7 @@ def test_branch_creation_uses_only_confirmation_stage_data() -> None:
 
 
 @respx.mock
-def test_pull_request_creation_uses_prefixed_branch_and_separate_token() -> None:
+async def test_pull_request_creation_uses_prefixed_branch_and_separate_token() -> None:
     client = make_client(github_write_token="write-token")
     respx.get("https://api.github.com/repos/owner/repo").mock(
         return_value=httpx.Response(200, json={"default_branch": "main"})
@@ -202,7 +202,7 @@ def test_pull_request_creation_uses_prefixed_branch_and_separate_token() -> None
         )
     )
 
-    result = client.create_pull_request(
+    result = await client.create_pull_request(
         "owner/repo", "ai/change", "main", "Title", "Body"
     )
 
@@ -232,13 +232,17 @@ def test_sensitive_workflow_paths_are_blocked() -> None:
         client._validate_blocked_path(".github/workflows/deploy.yml")
 
 
-def test_credential_files_and_secret_content_are_rejected_before_network() -> None:
+async def test_credential_files_and_secret_content_are_rejected_before_network() -> (
+    None
+):
     client = make_client(github_write_token="write-token")
 
     with pytest.raises(ToolError, match="credential files"):
-        client.prepare_file_update("owner/repo", ".env", "ai/change", "safe", "Update")
+        await client.prepare_file_update(
+            "owner/repo", ".env", "ai/change", "safe", "Update"
+        )
     with pytest.raises(ToolError, match="appears to contain a secret"):
-        client.prepare_file_update(
+        await client.prepare_file_update(
             "owner/repo",
             "README.md",
             "ai/change",
@@ -256,8 +260,8 @@ def test_write_path_must_be_normalized_and_relative() -> None:
             client._validate_writable_file_path(path)
 
 
-def test_non_prefixed_branch_is_rejected() -> None:
+async def test_non_prefixed_branch_is_rejected() -> None:
     client = make_client(github_write_token="write-token")
 
     with pytest.raises(ToolError, match="Write branches must start"):
-        client.validate_write_branch("owner/repo", "main", require_existing=False)
+        await client.validate_write_branch("owner/repo", "main", require_existing=False)
