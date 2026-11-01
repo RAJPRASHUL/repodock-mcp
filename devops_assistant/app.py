@@ -90,3 +90,7 @@ def config_status() -> dict[str, str | int | bool]:
         "enable_write_tools": settings.enable_write_tools,
         "github_api_base_url": settings.github_api_base_url,
     }
+
+
+def main() -> None:
+    mcp.run()

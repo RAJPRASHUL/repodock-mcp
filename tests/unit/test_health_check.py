@@ -6,6 +6,20 @@ from devops_assistant import app
 from devops_assistant.config import Settings
 
 
+def test_main_runs_mcp(monkeypatch) -> None:
+    called = False
+
+    def run() -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(app.mcp, "run", run)
+
+    app.main()
+
+    assert called
+
+
 def test_health_check_reports_unavailable_services_without_secrets(monkeypatch) -> None:
     settings = Settings(github_token=None)
 
