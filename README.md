@@ -317,6 +317,29 @@ Do not invoke write tools in a portfolio demo. Any separate confirmation-flow de
 └── README.md
 ```
 
+## Repositories
+
+Repositories associated with [RAJPRASHUL](https://github.com/RAJPRASHUL):
+
+- [100problems](https://github.com/RAJPRASHUL/100problems)
+- [api-gateway](https://github.com/RAJPRASHUL/api-gateway)
+- [Automated-Product-Price-Monitoring-Dashboard](https://github.com/RAJPRASHUL/Automated-Product-Price-Monitoring-Dashboard)
+- [BroadWave](https://github.com/RAJPRASHUL/BroadWave)
+- [collab-board](https://github.com/RAJPRASHUL/collab-board)
+- [EventEats](https://github.com/RAJPRASHUL/EventEats)
+- [expense-tracker-api](https://github.com/RAJPRASHUL/expense-tracker-api)
+- [FormCraft-](https://github.com/RAJPRASHUL/FormCraft-)
+- [insurance-premium-prediction](https://github.com/RAJPRASHUL/insurance-premium-prediction)
+- [plan_Remainder](https://github.com/RAJPRASHUL/plan_Remainder)
+- [portfolio](https://github.com/RAJPRASHUL/portfolio)
+- [problem-solving-log](https://github.com/RAJPRASHUL/problem-solving-log)
+- [progressMap](https://github.com/RAJPRASHUL/progressMap)
+- [RAJPRASHUL](https://github.com/RAJPRASHUL/RAJPRASHUL)
+- [repodock-mcp](https://github.com/RAJPRASHUL/repodock-mcp)
+- [ShigotoFlow](https://github.com/RAJPRASHUL/ShigotoFlow)
+- [small-projects](https://github.com/RAJPRASHUL/small-projects)
+- [url_shortner](https://github.com/RAJPRASHUL/url_shortner)
+
 ## References
 
 - [FastMCP documentation](https://gofastmcp.com/)
