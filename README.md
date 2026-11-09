@@ -298,6 +298,7 @@ Do not invoke write tools in a portfolio demo. Any separate confirmation-flow de
 
 ```text
 .
+├── LICENSE
 ├── .vscode/mcp.json
 ├── devops_assistant/
 │   ├── app.py
@@ -317,6 +318,20 @@ Do not invoke write tools in a portfolio demo. Any separate confirmation-flow de
 └── README.md
 ```
 
+## Contributing
+
+Contributions are welcome. To propose a change:
+
+1. Open an issue describing the bug or improvement, or discuss the change in an existing issue.
+2. Create a branch and submit a pull request with a clear summary of the changes.
+3. Run the unit tests before submitting:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pytest -v
+   ```
+
+Keep changes focused, add or update tests when behavior changes, and never include credentials, `.env` files, or sensitive logs.
+
 ## References
 
 - [FastMCP documentation](https://gofastmcp.com/)
@@ -327,3 +342,7 @@ Do not invoke write tools in a portfolio demo. Any separate confirmation-flow de
 - [GitHub REST API: Repository contents](https://docs.github.com/en/rest/repos/contents)
 - [GitHub REST API: Pull requests](https://docs.github.com/en/rest/pulls/pulls)
 - [Docker SDK for Python](https://docker-py.readthedocs.io/)
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
