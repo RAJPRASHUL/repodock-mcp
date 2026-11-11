@@ -188,6 +188,7 @@ These are not registered or advertised unless `ENABLE_WRITE_TOOLS=true`.
 
 | Tool | Action |
 |---|---|
+| `github_create_repository` | Stages creation of a personal GitHub repository, optionally initialized with an initial README commit. |
 | `github_create_branch` | Stages creation of a branch from a selected base branch. |
 | `github_commit_file` | Stages a single-file create/update on a prefixed branch; the proposed content is shown in the confirmation preview. |
 | `github_create_pull_request` | Stages a pull request for human review. No merge tool exists. |
@@ -220,13 +221,13 @@ Writes should remain disabled for normal testing. To enable them, set `ENABLE_WR
 Required controls:
 
 1. Configure an explicit, narrow `ALLOWED_GITHUB_REPOS` and/or `ALLOWED_DOCKER_CONTAINERS`; writes are denied if the relevant allowlist is empty.
-2. Provide a **separate** `GITHUB_WRITE_TOKEN`, limited to the test repository with only the needed Contents read/write and Pull requests read/write permissions. Never reuse the read token.
+2. Provide a **separate** `GITHUB_WRITE_TOKEN`; never reuse the read token. Repository creation additionally requires a token that can create repositories in the authenticated personal account.
 3. Use `GITHUB_WRITE_BRANCH_PREFIX` (default `ai/`). GitHub file writes are restricted to prefixed branches, not the default branch.
 4. Every write is staged first. The tool returns an exact action preview and a random, single-use token that expires after five minutes. Call `confirm_action(token)` separately to execute it; targets are revalidated at execution.
 5. `.github/workflows/`, common credential files, and content detected as secrets are blocked. Pull requests are for human review; no merge operation is available.
 6. Docker restart is allowed only for explicitly allowlisted containers. Production-like names and selected environment labels are rejected.
 
-The production-name/label check is only a heuristic; it cannot prove a target is non-production. Do not use these tools to mutate production systems. Do not add unrestricted shell execution, container exec, image/container deletion, or merge operations.
+For `github_create_repository`, add the intended future `owner/repository` to `ALLOWED_GITHUB_REPOS` before staging creation. The tool only creates repositories for the authenticated personal account; organization repository creation is not supported. The default is private and initialized with a README. The production-name/label check is only a heuristic; it cannot prove a target is non-production. Do not use these tools to mutate production systems. Do not add unrestricted shell execution, container exec, image/container deletion, or merge operations.
 
 ## Audit behavior
 
