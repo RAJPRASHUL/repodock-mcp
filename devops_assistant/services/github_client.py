@@ -541,8 +541,94 @@ class GitHubClient:
             )
         return repository
 
+    async def prepare_repository_creation(
+        self,
+        repository: str,
+        description: str,
+        private: bool,
+        initialize_with_readme: bool,
+    ) -> dict[str, Any]:
+        repository = self.validate_write_repository(repository)
+        self._validate_repository_description(description)
+        self.require_write_token()
+
+        user = await self._write_request("GET", "user", None)
+        owner = user.get("login") if isinstance(user, dict) else None
+        if not isinstance(owner, str) or not owner:
+            raise ToolError("GitHub API returned invalid authenticated user data")
+        requested_owner = repository.split("/", 1)[0]
+        if requested_owner.casefold() != owner.casefold():
+            raise PolicyDeniedError(
+                "Repositories can only be created under the authenticated personal account"
+            )
+
+        existing_repository = await self._write_request(
+            "GET", f"repos/{repository}", None, allow_not_found=True
+        )
+        if existing_repository is not None:
+            raise PolicyDeniedError("Repository already exists")
+
+        return {
+            "repository": repository,
+            "description": description,
+            "private": private,
+            "initialize_with_readme": initialize_with_readme,
+        }
+
+    async def create_repository(
+        self,
+        repository: str,
+        description: str,
+        private: bool,
+        initialize_with_readme: bool,
+    ) -> dict[str, Any]:
+        details = await self.prepare_repository_creation(
+            repository, description, private, initialize_with_readme
+        )
+        name = repository.split("/", 1)[1]
+        data = await self._write_request(
+            "POST",
+            "user/repos",
+            {
+                "name": name,
+                "description": description,
+                "private": private,
+                "auto_init": initialize_with_readme,
+            },
+        )
+        full_name = data.get("full_name") if isinstance(data, dict) else None
+        if (
+            not isinstance(full_name, str)
+            or full_name.casefold() != repository.casefold()
+        ):
+            raise ToolError("GitHub API returned unexpected repository details")
+        return self._shape(
+            {
+                "full_name": full_name,
+                "html_url": data.get("html_url"),
+                "private": data.get("private"),
+                "default_branch": data.get("default_branch"),
+                "initialized_with_readme": details["initialize_with_readme"],
+            }
+        )
+
+    @staticmethod
+    def _validate_repository_description(description: str) -> None:
+        if len(description) > 350:
+            raise InvalidInputError(
+                "Repository description must be 350 characters or fewer"
+            )
+        if redact(description) != description:
+            raise PolicyDeniedError(
+                "Repository description appears to contain a secret"
+            )
+
     async def _write_request(
-        self, method: str, path: str, payload: dict[str, Any]
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None,
+        allow_not_found: bool = False,
     ) -> Any:
         self.require_write_token()
         token = self.settings.github_write_token
@@ -574,6 +660,8 @@ class GitHubClient:
                 raise ToolError("GitHub API rate limit exceeded; try again later")
             raise ToolError("GitHub denied the write; check write token permissions")
         if response.status_code == 404:
+            if allow_not_found:
+                return None
             raise ToolError("GitHub resource was not found or is not accessible")
         if response.status_code == 429:
             raise ToolError("GitHub API rate limit exceeded; try again later")

@@ -22,6 +22,39 @@ def register(
 
     @mcp.tool
     @audit_tool
+    async def github_create_repository(
+        repository: str,
+        description: str = "",
+        private: bool = True,
+        initialize_with_readme: bool = True,
+    ) -> str:
+        """Stage creation of an allowlisted repository under the authenticated personal GitHub account; confirmation is required."""
+        github.require_write_token()
+        details = await github.prepare_repository_creation(
+            repository, description, private, initialize_with_readme
+        )
+        visibility = "private" if private else "public"
+        readme = "with an initial README commit" if initialize_with_readme else "empty"
+        action_description = (
+            f"Create {visibility} GitHub repository {repository} {readme}"
+        )
+
+        async def execute() -> dict:
+            return await github.create_repository(
+                repository, description, private, initialize_with_readme
+            )
+
+        return action_manager.stage(
+            "github_create_repository",
+            repository,
+            action_description,
+            details,
+            execute,
+            settings.max_output_chars,
+        )
+
+    @mcp.tool
+    @audit_tool
     async def github_create_branch(
         repository: str, branch: str, base_branch: str
     ) -> str:

@@ -179,6 +179,108 @@ async def test_branch_creation_uses_only_confirmation_stage_data() -> None:
     assert b"base-sha" in post_route.calls[0].request.read()
 
 
+@pytest.mark.parametrize("initialize_with_readme", [True, False])
+@respx.mock
+async def test_repository_creation_checks_owner_and_posts_requested_readme_option(
+    initialize_with_readme: bool,
+) -> None:
+    client = make_client(
+        allowed_github_repos={"owner/new-repo"},
+        github_write_token="write-token",
+    )
+    user_route = respx.get("https://api.github.com/user").mock(
+        return_value=httpx.Response(200, json={"login": "owner"})
+    )
+    repo_route = respx.get("https://api.github.com/repos/owner/new-repo").mock(
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
+    create_route = respx.post("https://api.github.com/user/repos").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "full_name": "owner/new-repo",
+                "html_url": "https://github.com/owner/new-repo",
+                "private": True,
+                "default_branch": "main",
+            },
+        )
+    )
+
+    details = await client.prepare_repository_creation(
+        "owner/new-repo", "An example", True, initialize_with_readme
+    )
+    result = await client.create_repository(
+        "owner/new-repo", "An example", True, initialize_with_readme
+    )
+
+    assert details["initialize_with_readme"] is initialize_with_readme
+    assert result == {
+        "full_name": "owner/new-repo",
+        "html_url": "https://github.com/owner/new-repo",
+        "private": True,
+        "default_branch": "main",
+        "initialized_with_readme": initialize_with_readme,
+    }
+    assert user_route.call_count == 2
+    assert repo_route.call_count == 2
+    assert create_route.calls[0].request.headers.get("Authorization")
+    assert create_route.calls[0].request.read() == (
+        b'{"name":"new-repo","description":"An example","private":true,"auto_init":'
+        + str(initialize_with_readme).lower().encode()
+        + b"}"
+    )
+
+
+@respx.mock
+async def test_repository_creation_only_allows_authenticated_personal_account() -> None:
+    client = make_client(
+        allowed_github_repos={"someone/new-repo"},
+        github_write_token="write-token",
+    )
+    user_route = respx.get("https://api.github.com/user").mock(
+        return_value=httpx.Response(200, json={"login": "owner"})
+    )
+
+    with pytest.raises(ToolError, match="authenticated personal account"):
+        await client.prepare_repository_creation("someone/new-repo", "", True, True)
+
+    assert user_route.called
+    assert respx.calls.call_count == 1
+
+
+@respx.mock
+async def test_repository_creation_rejects_existing_repository() -> None:
+    client = make_client(
+        allowed_github_repos={"owner/repo"},
+        github_write_token="write-token",
+    )
+    respx.get("https://api.github.com/user").mock(
+        return_value=httpx.Response(200, json={"login": "owner"})
+    )
+    respx.get("https://api.github.com/repos/owner/repo").mock(
+        return_value=httpx.Response(200, json={"full_name": "owner/repo"})
+    )
+
+    with pytest.raises(ToolError, match="Repository already exists"):
+        await client.prepare_repository_creation("owner/repo", "", True, True)
+
+    assert not respx.post("https://api.github.com/user/repos").called
+
+
+async def test_repository_creation_rejects_secret_description_before_network() -> None:
+    client = make_client(
+        allowed_github_repos={"owner/new-repo"},
+        github_write_token="write-token",
+    )
+
+    with pytest.raises(ToolError, match="appears to contain a secret"):
+        await client.prepare_repository_creation(
+            "owner/new-repo", "token=ghp_example123", True, True
+        )
+
+    assert not respx.calls
+
+
 @respx.mock
 async def test_pull_request_creation_uses_prefixed_branch_and_separate_token() -> None:
     client = make_client(github_write_token="write-token")
