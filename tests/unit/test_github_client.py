@@ -39,6 +39,29 @@ async def test_list_repositories_filters_to_allowlist() -> None:
 
 
 @respx.mock
+async def test_list_repositories_filters_to_owner_wildcard_allowlist() -> None:
+    respx.get("https://api.github.com/user/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"full_name": "owner/repo", "private": True},
+                {"full_name": "owner/another-repo", "private": False},
+                {"full_name": "someone/other", "private": False},
+            ],
+        )
+    )
+
+    repositories = await make_client(
+        allowed_github_repos={"OWNER/*"}
+    ).list_repositories(30)
+
+    assert [repo["full_name"] for repo in repositories] == [
+        "owner/repo",
+        "owner/another-repo",
+    ]
+
+
+@respx.mock
 async def test_read_file_redacts_and_bounds_content() -> None:
     content = "token=ghp_examplesecret\n" + ("a" * 100)
     encoded = base64.b64encode(content.encode()).decode()
@@ -325,6 +348,17 @@ def test_write_operations_require_explicit_repository_allowlist() -> None:
 
     with pytest.raises(ToolError, match="explicit repository allowlist"):
         client.validate_write_repository("owner/repo")
+
+
+def test_owner_wildcard_allows_writes_to_repositories_for_that_owner() -> None:
+    client = make_client(
+        allowed_github_repos={"owner/*"}, github_write_token="write-token"
+    )
+
+    assert client.validate_write_repository("owner/new-repo") == "owner/new-repo"
+
+    with pytest.raises(ToolError, match="allowlist"):
+        client.validate_write_repository("someone/new-repo")
 
 
 def test_sensitive_workflow_paths_are_blocked() -> None:

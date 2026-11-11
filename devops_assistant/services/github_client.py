@@ -16,6 +16,19 @@ _MAX_PAGES = 5
 _PER_PAGE = 100
 
 
+def _repository_matches_allowlist(
+    repository: str, allowed_repositories: set[str]
+) -> bool:
+    repository = repository.casefold()
+    owner, _ = repository.split("/", 1)
+
+    return any(
+        repository == allowed.casefold()
+        or (allowed.casefold().endswith("/*") and allowed[:-2].casefold() == owner)
+        for allowed in allowed_repositories
+    )
+
+
 class GitHubClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -37,9 +50,9 @@ class GitHubClient:
         if owner in {".", ".."} or name in {".", ".."}:
             raise InvalidInputError("Repository must use the owner/repository format")
 
-        if self.settings.allowed_github_repos and repository.casefold() not in {
-            item.casefold() for item in self.settings.allowed_github_repos
-        }:
+        if self.settings.allowed_github_repos and not _repository_matches_allowlist(
+            repository, self.settings.allowed_github_repos
+        ):
             raise PolicyDeniedError("Repository is not on the configured allowlist")
         return repository
 
@@ -108,12 +121,13 @@ class GitHubClient:
             "user/repos", {"sort": "updated", "direction": "desc"}
         )
         if self.settings.allowed_github_repos:
-            allowed = {item.casefold() for item in self.settings.allowed_github_repos}
             repositories = [
                 repository
                 for repository in repositories
                 if isinstance(repository.get("full_name"), str)
-                and repository["full_name"].casefold() in allowed
+                and _repository_matches_allowlist(
+                    repository["full_name"], self.settings.allowed_github_repos
+                )
             ]
 
         return [

@@ -52,7 +52,7 @@ ALLOWED_DOCKER_CONTAINERS=container-name
 ENABLE_WRITE_TOOLS=false
 ```
 
-Replace the example repository and container names with your own. The GitHub token must have the read permissions needed for the tools you plan to use. For Docker tools, Docker Desktop or another authorized Docker Engine must be running. Do not put real credentials in `mcp.json` or commit `.env`.
+Use an exact repository name or `owner/*` to allow all repositories for that owner. Replace the example owner and container names with your own. The GitHub token must have the read permissions needed for the tools you plan to use. For Docker tools, Docker Desktop or another authorized Docker Engine must be running. Do not put real credentials in `mcp.json` or commit `.env`.
 
 In VS Code, run **MCP: List Servers**, start `devopsAssistant`, and use Copilot Chat in **Agent** mode. Example requests:
 
@@ -203,7 +203,7 @@ Copy [`.env.example`](.env.example) to `.env` and set only the values you need. 
 |---|---|
 | `GITHUB_TOKEN` | GitHub token used by read tools. Use a fine-grained token with only the required permissions. |
 | `GITHUB_API_BASE_URL` | GitHub API URL (default `https://api.github.com`). |
-| `ALLOWED_GITHUB_REPOS` | Comma-separated `owner/repository` allowlist. Empty means no extra server-side repository restriction; token permissions still apply. |
+| `ALLOWED_GITHUB_REPOS` | Comma-separated `owner/repository` entries or `owner/*` patterns. Empty means no extra read restriction; writes require a non-empty allowlist. |
 | `ALLOWED_DOCKER_CONTAINERS` | Comma-separated container-name allowlist for container-specific tools. Empty leaves Docker reads unrestricted by this server within the connected daemon. |
 | `MAX_LOG_LINES` | Maximum Docker log tail size (default `200`). |
 | `MAX_OUTPUT_CHARS` | Maximum result size in characters (default `8000`). |
@@ -220,14 +220,14 @@ Writes should remain disabled for normal testing. To enable them, set `ENABLE_WR
 
 Required controls:
 
-1. Configure an explicit, narrow `ALLOWED_GITHUB_REPOS` and/or `ALLOWED_DOCKER_CONTAINERS`; writes are denied if the relevant allowlist is empty.
+1. Configure an explicit, narrow `ALLOWED_GITHUB_REPOS` and/or `ALLOWED_DOCKER_CONTAINERS`; GitHub entries may be exact `owner/repository` names or `owner/*` patterns. Writes are denied if the relevant allowlist is empty.
 2. Provide a **separate** `GITHUB_WRITE_TOKEN`; never reuse the read token. Repository creation additionally requires a token that can create repositories in the authenticated personal account.
 3. Use `GITHUB_WRITE_BRANCH_PREFIX` (default `ai/`). GitHub file writes are restricted to prefixed branches, not the default branch.
 4. Every write is staged first. The tool returns an exact action preview and a random, single-use token that expires after five minutes. Call `confirm_action(token)` separately to execute it; targets are revalidated at execution.
 5. `.github/workflows/`, common credential files, and content detected as secrets are blocked. Pull requests are for human review; no merge operation is available.
 6. Docker restart is allowed only for explicitly allowlisted containers. Production-like names and selected environment labels are rejected.
 
-For `github_create_repository`, add the intended future `owner/repository` to `ALLOWED_GITHUB_REPOS` before staging creation. The tool only creates repositories for the authenticated personal account; organization repository creation is not supported. The default is private and initialized with a README. The production-name/label check is only a heuristic; it cannot prove a target is non-production. Do not use these tools to mutate production systems. Do not add unrestricted shell execution, container exec, image/container deletion, or merge operations.
+For `github_create_repository`, an exact `owner/repository` entry or matching `owner/*` pattern must be in `ALLOWED_GITHUB_REPOS` before staging creation. An owner wildcard allows writes to every matching repository, including future repositories. The tool only creates repositories for the authenticated personal account; organization repository creation is not supported. The default is private and initialized with a README. The production-name/label check is only a heuristic; it cannot prove a target is non-production. Do not use these tools to mutate production systems. Do not add unrestricted shell execution, container exec, image/container deletion, or merge operations.
 
 ## Audit behavior
 
